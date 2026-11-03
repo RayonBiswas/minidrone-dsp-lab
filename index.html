@@ -51,6 +51,14 @@ canvas.plot{width:100%;height:190px;display:block;background:#0b101a;border-radi
 .steer:after{content:"";position:absolute;left:50%;top:0;bottom:0;width:2px;background:#fff}
 .msg{font-size:12.5px;color:var(--warn);margin:6px 0 0}
 .cols{display:grid;grid-template-columns:1fr;gap:10px}
+table.tbl{width:100%;border-collapse:collapse;font-size:12px;margin-top:6px}
+.tbl th,.tbl td{padding:5px 6px;border-bottom:1px solid var(--line);text-align:right;font-variant-numeric:tabular-nums}
+.tbl th:first-child,.tbl td:first-child{text-align:left}
+.tbl th{color:var(--mut);font-weight:600}
+.tbl tr.best td{color:var(--ok);font-weight:650}
+.verdict{background:#13261d;border:1px solid #1f5c3c;border-radius:10px;padding:8px 10px;font-size:12.5px;margin-top:8px}
+.prog{height:6px;background:#0b101a;border-radius:4px;overflow:hidden;margin-top:8px}.prog div{height:100%;width:0;background:var(--acc);transition:width .2s}
+.tblwrap{overflow-x:auto}
 @media(min-width:760px){.cols{grid-template-columns:1.25fr 1fr}}
 </style>
 </head>
@@ -64,6 +72,8 @@ canvas.plot{width:100%;height:190px;display:block;background:#0b101a;border-radi
   <button data-tab="imu">IMU</button>
   <button data-tab="alt">Altitude</button>
   <button data-tab="flight">Flight</button>
+  <button data-tab="drone">Drone</button>
+  <button data-tab="results">Results</button>
 </nav>
 
 <!-- ================= VISION ================= -->
@@ -73,6 +83,7 @@ canvas.plot{width:100%;height:190px;display:block;background:#0b101a;border-radi
     <div class="pipe" id="vPipe">
       <span class="chip">Camera</span><span class="arr">→</span>
       <span class="chip t on" data-k="median">Median 3×3</span><span class="arr">→</span>
+      <span class="chip t" data-k="gauss">Gaussian 5×5</span><span class="arr">→</span>
       <span class="chip">RGB→HSV threshold</span><span class="arr">→</span>
       <span class="chip t on" data-k="morph">Close + Open</span><span class="arr">→</span>
       <span class="chip">Edges</span><span class="arr">→</span>
@@ -149,6 +160,8 @@ canvas.plot{width:100%;height:190px;display:block;background:#0b101a;border-radi
     <div class="row" style="margin-top:10px">
       <button class="btn pri" id="imuStart">Start phone sensors</button>
       <button class="btn" id="gyroReset">Reset gyro</button>
+      <button class="btn on" id="lpIIR">IIR low-pass</button>
+      <button class="btn" id="lpFIR">FIR low-pass</button>
     </div>
     <p class="hint">Hold the phone flat and tilt it left/right (roll). Put it on a running fan or vibrating motor, or inject vibration below. The FFT finds the peak and the notch filter moves to it on its own.</p>
     <p class="msg" id="iMsg"></p>
@@ -181,6 +194,7 @@ canvas.plot{width:100%;height:190px;display:block;background:#0b101a;border-radi
       <div class="stat"><i>Vibration peak</i><b id="iPeak">–</b></div>
       <div class="stat"><i>Accel roll noise raw → filtered</i><b id="iNoise">–</b></div>
       <div class="stat"><i>Gyro-only drift</i><b id="iDrift">–</b></div>
+      <div class="stat"><i>Low-pass delay @1 Hz</i><b id="iDelay">–</b></div>
     </div>
   </div>
   <div class="card">
@@ -260,13 +274,58 @@ canvas.plot{width:100%;height:190px;display:block;background:#0b101a;border-radi
   </div>
 </section>
 
+<!-- ================= DRONE MODE ================= -->
+<section id="drone">
+  <div class="card">
+    <h3>Drone mode: camera + IMU together</h3>
+    <p class="hint" style="margin-top:0">Hold the phone flat, screen up, back camera looking down at the tape, top edge = drone nose. Walk along the tape; tilt to roll/pitch. Uses the track colour and threshold from the Camera tab.</p>
+    <div class="row"><button class="btn pri" id="dStart">Start drone mode</button><button class="btn" id="dNoise">Inject noise</button></div>
+    <p class="msg" id="dMsg"></p>
+    <div class="grid2">
+      <div class="panel"><canvas id="dCam" width="320" height="240"></canvas><span>camera + DSP line</span></div>
+      <div class="panel"><canvas id="dMask" width="320" height="240"></canvas><span>filtered mask</span></div>
+    </div>
+    <canvas class="plot" id="dHor" style="height:200px;margin-top:8px"></canvas>
+    <h3 style="margin-top:10px">Steering command</h3>
+    <div class="steer"><div id="dSteer"></div></div>
+    <div class="stats" style="margin-top:8px">
+      <div class="stat"><i>Status</i><b id="dStat">–</b></div>
+      <div class="stat"><i>Heading θ (camera)</i><b id="dTh">–</b></div>
+      <div class="stat"><i>Offset d</i><b id="dD">–</b></div>
+      <div class="stat"><i>Roll (fused)</i><b id="dRoll">–</b></div>
+      <div class="stat"><i>Pitch (fused)</i><b id="dPitch">–</b></div>
+      <div class="stat"><i>Vibration peak</i><b id="dVib">–</b></div>
+    </div>
+  </div>
+</section>
+
+<!-- ================= RESULTS ================= -->
+<section id="results">
+  <div class="card">
+    <h3>Results: every comparison from the proposal</h3>
+    <p class="hint" style="margin-top:0">Fixed random seed, so every run gives the same numbers. Each experiment uses identical noisy inputs for every filter and changes one thing at a time. A laptop browser runs it faster than a phone.</p>
+    <div class="row"><button class="btn pri" id="rAll">Run all experiments</button><button class="btn" id="rCopy">Copy tables</button><button class="btn" id="rCsv">Download CSV</button></div>
+    <div class="prog"><div id="rProg"></div></div>
+    <p class="hint" id="rStat"></p>
+  </div>
+  <div class="card"><h3>E1 · Vision: filter vs filter, three noise types</h3><div class="row"><button class="btn" data-run="e1">Run E1</button></div><div id="e1"></div></div>
+  <div class="card"><h3>E2 · Vision: accuracy vs noise level</h3><div class="row"><button class="btn" data-run="e2">Run E2</button></div><canvas class="plot" id="e2c" style="display:none"></canvas><div id="e2"></div></div>
+  <div class="card"><h3>E3 · Inertial: filters, FIR vs IIR, fusion</h3><div class="row"><button class="btn" data-run="e3">Run E3</button></div><canvas class="plot" id="e3c" style="display:none"></canvas><div id="e3"></div></div>
+  <div class="card"><h3>E4 · Altitude: spike and noise removal</h3><div class="row"><button class="btn" data-run="e4">Run E4</button></div><div id="e4"></div></div>
+  <div class="card"><h3>E5 · Closed-loop flight</h3><div class="row"><button class="btn" data-run="e5">Run E5</button></div><div id="e5"></div></div>
+</section>
+
 <script>
 "use strict";
 // ---------- helpers ----------
 const $ = id => document.getElementById(id);
 const W = 160, H = 120, XC = (W - 1) / 2, YC = (H - 1) / 2;
 const D2R = Math.PI / 180, R2D = 180 / Math.PI;
-function randn() { let u = 0, v = 0; while (!u) u = Math.random(); while (!v) v = Math.random(); return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v); }
+let RNG = Math.random;
+function rand() { return RNG(); }
+function setSeed(a) { RNG = function () { a |= 0; a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
+function clearSeed() { RNG = Math.random; }
+function randn() { let u = 0, v = 0; while (!u) u = rand(); while (!v) v = rand(); return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v); }
 const val = id => parseFloat($(id).value);
 function std(a) { if (a.length < 2) return 0; const m = a.reduce((s, x) => s + x, 0) / a.length; return Math.sqrt(a.reduce((s, x) => s + (x - m) ** 2, 0) / a.length); }
 function rms(a) { return a.length ? Math.sqrt(a.reduce((s, x) => s + x * x, 0) / a.length) : 0; }
@@ -330,7 +389,7 @@ function addNoise(src, sig, sp, light, blur) {
     img = out;
   }
   for (let i = 0; i < img.length; i++) {
-    const r = Math.random();
+    const r = rand();
     if (r < sp / 2) img[i] = 0;
     else if (r > 1 - sp / 2) img[i] = 1;
     else img[i] = Math.min(1, Math.max(0, img[i] + sig * randn()));
@@ -364,6 +423,18 @@ function medianImg(img) {
     for (let dy = -1; dy <= 1; dy++) { const yy = y + dy < 0 ? 0 : y + dy >= H ? H - 1 : y + dy;
       for (let dx = -1; dx <= 1; dx++) { const xx = x + dx < 0 ? 0 : x + dx >= W ? W - 1 : x + dx; M9[n++] = img[(yy * W + xx) * 3 + k]; } }
     o[(y * W + x) * 3 + k] = med9(M9);
+  }
+  return o;
+}
+function gaussImg(img) {
+  const k = [1, 4, 6, 4, 1], tmp = new Float32Array(img.length), o = new Float32Array(img.length);
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) for (let c = 0; c < 3; c++) {
+    let s = 0; for (let j = -2; j <= 2; j++) { const xx = Math.min(W - 1, Math.max(0, x + j)); s += k[j + 2] * img[(y * W + xx) * 3 + c]; }
+    tmp[(y * W + x) * 3 + c] = s / 16;
+  }
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) for (let c = 0; c < 3; c++) {
+    let s = 0; for (let j = -2; j <= 2; j++) { const yy = Math.min(H - 1, Math.max(0, y + j)); s += k[j + 2] * tmp[(yy * W + x) * 3 + c]; }
+    o[(y * W + x) * 3 + c] = s / 16;
   }
   return o;
 }
@@ -433,10 +504,13 @@ function hough(e) {
   if (th >= 90) { th -= 180; rho = -rho; } if (th < -90) { th += 180; rho = -rho; }
   return { th, rho, d: rho - (XC * Math.cos(th * D2R) + YC * Math.sin(th * D2R)) };
 }
-function pipeline(img, colName, thr, useMed, useMorph) {
+function pipeline(img, colName, thr, o = {}) {
   const raw = threshold(img, colName, thr);
-  let m = useMed ? threshold(medianImg(img), colName, thr) : raw;
-  if (useMorph) m = openM(closeM(m));
+  let pre = img;
+  if (o.med) pre = medianImg(pre);
+  if (o.gauss) pre = gaussImg(pre);
+  let m = (o.med || o.gauss) ? threshold(pre, colName, thr) : raw;
+  if (o.morph) m = openM(closeM(m));
   const e = edges(m);
   return { raw, mask: m, edge: e, est: hough(e) };
 }
@@ -530,9 +604,9 @@ function visionStep() {
   const img = addNoise(base, val('vSig'), val('vSp') / 100, val('vLight'), val('vBlur'));
   const thr = val('vThr');
   const t0 = performance.now();
-  const P = pipeline(img, vCol, thr, vChip.median, vChip.morph);
+  const P = pipeline(img, vCol, thr, { med: vChip.median, gauss: vChip.gauss, morph: vChip.morph });
   const ms = performance.now() - t0;
-  const R = pipeline(img, vCol, thr, false, false);
+  const R = pipeline(img, vCol, thr, {});
 
   blitRGB($('c1'), img);
   blitMask($('c2'), P.raw, [255, 210, 63]);
@@ -575,6 +649,32 @@ class Biquad {
     this.x2 = this.x1; this.x1 = x; this.y2 = this.y1; this.y1 = y; return y;
   }
 }
+class FIR {
+  constructor() { this.h = [1]; this.buf = [0]; this.i = 0; this.init = false; this.key = ''; }
+  lowpass(fc, fs) {
+    const N = 2 * Math.round(0.6 * fs / fc) + 1, key = N + ':' + fc + ':' + Math.round(fs);
+    if (key === this.key) return; this.key = key;
+    const wc = 2 * fc / fs, M = (N - 1) / 2, h = [];
+    for (let n = 0; n < N; n++) { const k = n - M, sinc = k === 0 ? wc : Math.sin(Math.PI * wc * k) / (Math.PI * k); h.push(sinc * (0.54 - 0.46 * Math.cos(2 * Math.PI * n / (N - 1)))); }
+    const g = h.reduce((a, b) => a + b, 0); this.h = h.map(v => v / g);
+    if (this.buf.length !== N) { this.buf = new Array(N).fill(this.buf[this.i] || 0); this.i = 0; }
+  }
+  delay(fs) { return (this.h.length - 1) / 2 / fs; }
+  step(x) {
+    if (!this.init) { this.buf.fill(x); this.init = true; }
+    this.buf[this.i] = x; let y = 0; const N = this.h.length;
+    for (let k = 0; k < N; k++) y += this.h[k] * this.buf[(this.i - k + N) % N];
+    this.i = (this.i + 1) % N; return y;
+  }
+}
+function iirDelay(bq, f, fs) {
+  const ph = w => { const [b0, b1, b2] = bq.b, [a1, a2] = bq.a;
+    const nr = b0 + b1 * Math.cos(w) + b2 * Math.cos(2 * w), ni = -b1 * Math.sin(w) - b2 * Math.sin(2 * w);
+    const dr = 1 + a1 * Math.cos(w) + a2 * Math.cos(2 * w), di = -a1 * Math.sin(w) - a2 * Math.sin(2 * w);
+    return Math.atan2(ni, nr) - Math.atan2(di, dr); };
+  const w = 2 * Math.PI * f / fs, dw = 1e-4; let d = ph(w + dw) - ph(w); if (d > Math.PI) d -= 2 * Math.PI; if (d < -Math.PI) d += 2 * Math.PI;
+  return -d / dw / fs;
+}
 function fftMag(x) {
   const n = x.length, re = new Float64Array(n), im = new Float64Array(n);
   const mean = x.reduce((s, v) => s + v, 0) / n;
@@ -597,7 +697,8 @@ const iChip = chips('iPipe');
 const NF = 256, G = 9.81;
 const imu = {
   live: false, running: false, fs: 100, lastT: 0, dts: [], t: 0, simTimer: null, auto: true,
-  notchA: [[new Biquad(), new Biquad(), new Biquad()], [new Biquad(), new Biquad(), new Biquad()]], lp: [new Biquad(), new Biquad(), new Biquad()],
+  notchA: [[new Biquad(), new Biquad(), new Biquad()], [new Biquad(), new Biquad(), new Biquad()]], lp: [new Biquad(), new Biquad(), new Biquad()], fir: [new FIR(), new FIR(), new FIR()], lpType: 'iir',
+  pitchComp: 0, pitchRaw: 0, pitchF: 0, gsignP: 1, corrP: [],
   peaks: [], gyroOnly: 0, comp: 0, kx: [0, 0], kP: [[1, 0], [0, 1]], gsign: 1,
   magBuf: [], magFBuf: [], ser: { tru: [], raw: [], f: [], g: [], c: [], k: [] }, rawRoll: 0, fused: 0,
   corr: [], lastPeakT: 0, simRoll: 0, rStart: 0,
@@ -608,10 +709,12 @@ function imuReset() {
   for (const k in imu.ser) imu.ser[k] = []; imu.magBuf = []; imu.magFBuf = []; imu.peaks = []; imu.t = 0; imu.rStart = 0;
   imu.notchA.flat().forEach(b => { b.bypass(); b.init = false; }); imu.lp.forEach(b => b.init = false);
 }
+function setLp(t) { imu.lpType = t; $('lpIIR').classList.toggle('on', t === 'iir'); $('lpFIR').classList.toggle('on', t === 'fir'); }
+$('lpIIR').onclick = () => setLp('iir'); $('lpFIR').onclick = () => setLp('fir');
 $('gyroReset').onclick = () => { imu.gyroOnly = imu.rawRoll; imu.rStart = imu.t; };
 $('autoRoll').onclick = () => { imu.auto = !imu.auto; $('autoRoll').classList.toggle('on', imu.auto); };
 
-function processSample(ax, ay, az, gyroDeg, dt, trueRoll) {
+function processSample(ax, ay, az, gyroDeg, dt, trueRoll, gyroBeta = 0) {
   imu.t += dt;
   imu.dts.push(dt); if (imu.dts.length > 100) imu.dts.shift();
   const fs = 1 / (imu.dts.reduce((a, b) => a + b, 0) / imu.dts.length); imu.fs = fs;
@@ -620,16 +723,23 @@ function processSample(ax, ay, az, gyroDeg, dt, trueRoll) {
   ax += vib + nz * randn(); ay += 0.5 * vib + nz * randn(); az += 0.8 * vib + nz * randn();
   const gyro = imu.gsign * gyroDeg + val('iBias');
 
-  const fc = val('iFc'), Q = val('iQ');
+  const fc = val('iFc'), Q = val('iQ'), al0 = val('iAlpha');
   imu.lp.forEach(b => iChip.lpf ? b.lowpass(fc, fs) : b.bypass());
+  if (imu.lpType === 'fir') imu.fir.forEach(f => f.lowpass(fc, fs));
   const comps = [ax, ay, az].map((v, i) => {
     let y = v;
     for (let k = 0; k < 2; k++) y = imu.notchA[k][i].step(y);
-    return imu.lp[i].step(y);
+    const yi = imu.lp[i].step(y), yf = imu.fir[i].step(y);
+    if (!iChip.lpf) return y;
+    return imu.lpType === 'fir' ? yf : yi;
   });
   const rawRoll = Math.atan2(ax, Math.hypot(ay, az)) * R2D;
   const fRoll = Math.atan2(comps[0], Math.hypot(comps[1], comps[2])) * R2D;
   imu.rawRoll = rawRoll;
+  const rawPitch = Math.atan2(ay, Math.hypot(ax, az)) * R2D, fPitch = Math.atan2(comps[1], Math.hypot(comps[0], comps[2])) * R2D;
+  imu.pitchRaw = rawPitch; imu.pitchF = fPitch;
+  imu.pitchComp = al0 * (imu.pitchComp + imu.gsignP * gyroBeta * dt) + (1 - al0) * fPitch;
+  imu.corrP.push([gyroBeta, fPitch]); if (imu.corrP.length > 200) imu.corrP.shift();
 
   imu.gyroOnly += gyro * dt;
   const al = val('iAlpha');
@@ -654,6 +764,10 @@ function processSample(ax, ay, az, gyroDeg, dt, trueRoll) {
     const gs = imu.corr.map(c => c[0]); if (std(gs) > 15) {
       let sc = 0; for (let i = 5; i < 200; i++) sc += gs[i] * (imu.corr[i][1] - imu.corr[i - 5][1]);
       const ns = sc >= 0 ? 1 : -1; if (ns !== imu.gsign) { imu.gsign = ns; imu.comp = fRoll; imu.gyroOnly = fRoll; }
+    }
+    const gp = imu.corrP.map(c => c[0]); if (imu.corrP.length === 200 && std(gp) > 15) {
+      let sc = 0; for (let i = 5; i < 200; i++) sc += gp[i] * (imu.corrP[i][1] - imu.corrP[i - 5][1]);
+      const ns = sc >= 0 ? 1 : -1; if (ns !== imu.gsignP) { imu.gsignP = ns; imu.pitchComp = fPitch; }
     }
   }
   if (imu.t - imu.lastPeakT > 0.25 && imu.magBuf.length === NF) { imu.lastPeakT = imu.t; updateNotch(fs, Q); }
@@ -683,7 +797,9 @@ function simTick() {
   if (imu.auto) { const t = imu.t; roll = 15 * Math.sin(2 * Math.PI * 0.2 * t) + 8 * Math.sin(2 * Math.PI * 0.5 * t + 1); $('iTilt').value = Math.round(roll); $('iTilt').dispatchEvent(new Event('input')); }
   else { imu.simRoll += (val('iTilt') - imu.simRoll) * 0.05; roll = imu.simRoll; }
   const rate = (roll - (imu.prevRoll ?? roll)) / dt; imu.prevRoll = roll;
-  processSample(G * Math.sin(roll * D2R) + 0.15 * randn(), 0.15 * randn(), G * Math.cos(roll * D2R) + 0.15 * randn(), rate + 0.8 * randn(), dt, roll);
+  const pitch = 10 * Math.sin(2 * Math.PI * 0.13 * imu.t), prate = (pitch - (imu.prevPitch ?? pitch)) / dt; imu.prevPitch = pitch;
+  const cr = Math.cos(roll * D2R), cpch = Math.cos(pitch * D2R);
+  processSample(G * Math.sin(roll * D2R) * cpch + 0.15 * randn(), G * Math.sin(pitch * D2R) + 0.15 * randn(), G * cr * cpch + 0.15 * randn(), rate + 0.8 * randn(), dt, roll, prate + 0.8 * randn());
 }
 function startSim(reason) {
   if (imu.simTimer) return;
@@ -704,9 +820,10 @@ function onMotion(e) {
   }
   let dt = (now - imu.lastT) / 1000; imu.lastT = now;
   if (!(dt > 0.001 && dt < 0.2)) return;
-  processSample(a.x, a.y, a.z, r.gamma, dt, NaN);
+  processSample(a.x, a.y, a.z, r.gamma, dt, NaN, r.beta || 0);
 }
-$('imuStart').onclick = async () => {
+async function startMotion() {
+  if (imu.motionAsked) return; imu.motionAsked = true;
   try {
     if (typeof DeviceMotionEvent !== 'undefined' && typeof DeviceMotionEvent.requestPermission === 'function') {
       const p = await DeviceMotionEvent.requestPermission(); if (p !== 'granted') throw new Error('permission ' + p);
@@ -715,7 +832,8 @@ $('imuStart').onclick = async () => {
     $('imuStart').textContent = 'Sensors on';
     setTimeout(() => { if (!imu.live) startSim('No motion sensor data here. Showing simulated IMU. On your phone, open the hosted https:// link and tap Start.'); }, 1500);
   } catch (err) { startSim('Motion sensors blocked (' + err.message + '). Showing simulated IMU.'); }
-};
+}
+$('imuStart').onclick = startMotion;
 
 function plotLines(cv, series, ymin, ymax, opts = {}) {
   const d = sizeCanvas(cv), c = cv.getContext('2d'), w = cv.width, h = cv.height;
@@ -774,6 +892,7 @@ function imuDraw() {
     sc.setLineDash([]);
   }
   $('iFs').textContent = imu.fs.toFixed(0) + ' Hz';
+  $('iDelay').textContent = !iChip.lpf ? 'off' : imu.lpType === 'fir' ? (1000 * imu.fir[0].delay(imu.fs)).toFixed(0) + ' ms (FIR, ' + imu.fir[0].h.length + ' taps)' : (1000 * iirDelay(imu.lp[0], 1, imu.fs)).toFixed(0) + ' ms (IIR)';
   $('iPeak').textContent = imu.peaks.length ? imu.peaks.map(p => p.toFixed(1)).join(', ') + ' Hz' : 'none';
   const tail = a => a.slice(-150);
   const hp = a => { const t = tail(a), o = []; for (let i = 1; i < t.length; i++) o.push(t[i] - t[i - 1]); return o; };
@@ -845,12 +964,13 @@ function segDist(px, py, pts) {
   }
   return [best, sgn];
 }
-function renderTrack(dr) {
+function renderTrack(dr, nz) {
   const pts = trackPts(), cp = Math.cos(dr.psi), sp = Math.sin(dr.psi);
   const base = paint((X, Y) => {
     const fwd = (YC - Y) * S_PX, lft = (XC - X) * S_PX;
     return segDist(dr.x + fwd * cp - lft * sp, dr.y + fwd * sp + lft * cp, pts)[0] < TRK_W;
   }, COLORS.red);
+  if (nz) return addNoise(base, nz.sig, nz.sp, nz.light, 7);
   return addNoise(base, val('fSig'), val('fSp') / 100, val('fLight'), 7);
 }
 function flyStep() {
@@ -859,7 +979,7 @@ function flyStep() {
   for (const dr of fly.d) {
     if (dr.lost !== null || dr.x > 900) continue;
     const img = renderTrack(dr);
-    const P = pipeline(img, 'red', 0.45, dr.filt, dr.filt);
+    const P = pipeline(img, 'red', 0.45, { med: dr.filt, morph: dr.filt });
     let est = P.est || dr.prev; dr.prev = est;
     const e = 0.03 * est.d * S_PX + est.th * D2R;
     dr.ef = dr.filt ? 0.6 * dr.ef + 0.4 * e : e;
@@ -896,13 +1016,285 @@ function flyDraw() {
   $('fT').textContent = fly.t.toFixed(1) + ' s';
 }
 
+
+// ---------- DRONE MODE ----------
+const drone = { on: false, src: 'synth', noise: false, steer: 0, t0: performance.now() };
+$('dNoise').onclick = () => { drone.noise = !drone.noise; $('dNoise').classList.toggle('on', drone.noise); };
+$('dStart').onclick = async () => {
+  $('dMsg').textContent = '';
+  startMotion();
+  try {
+    if (!camStream) {
+      camStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment', width: { ideal: 640 }, height: { ideal: 480 } }, audio: false });
+      vid.srcObject = camStream; await vid.play();
+    }
+    drone.src = 'cam';
+  } catch (e) { drone.src = 'synth'; $('dMsg').textContent = 'Camera blocked here (' + e.name + '), using a synthetic track. Open the GitHub Pages link on your phone for the real camera.'; }
+  drone.on = true; $('dStart').textContent = 'Running';
+};
+function drawHorizon(roll, pitch, rawRoll) {
+  const cv = $('dHor'), d = sizeCanvas(cv), c = cv.getContext('2d'), w = cv.width, h = cv.height;
+  c.save(); c.clearRect(0, 0, w, h); c.translate(w / 2, h / 2); c.rotate(-roll * D2R);
+  const off = pitch * h / 60;
+  c.fillStyle = '#1e4f8f'; c.fillRect(-w, -2 * h + off, 2 * w, 2 * h);
+  c.fillStyle = '#6b4a2b'; c.fillRect(-w, off, 2 * w, 2 * h);
+  c.strokeStyle = '#fff'; c.lineWidth = 2 * d; c.beginPath(); c.moveTo(-w, off); c.lineTo(w, off); c.stroke();
+  c.font = (10 * d) + 'px system-ui'; c.fillStyle = '#fff';
+  for (const p of [-20, -10, 10, 20]) { const y = off - p * h / 60; c.beginPath(); c.moveTo(-30 * d, y); c.lineTo(30 * d, y); c.stroke(); c.fillText(p + '°', 34 * d, y + 3 * d); }
+  c.restore();
+  c.save(); c.translate(w / 2, h / 2); c.strokeStyle = '#ffd23f'; c.lineWidth = 4 * d; c.lineCap = 'round';
+  c.beginPath(); c.moveTo(-70 * d, 0); c.lineTo(-20 * d, 0); c.lineTo(-10 * d, 10 * d); c.moveTo(70 * d, 0); c.lineTo(20 * d, 0); c.lineTo(10 * d, 10 * d); c.stroke();
+  c.fillStyle = '#ffd23f'; c.beginPath(); c.arc(0, 0, 4 * d, 0, 2 * Math.PI); c.fill(); c.restore();
+  c.fillStyle = 'rgba(0,0,0,.55)'; c.fillRect(6 * d, 6 * d, 150 * d, 40 * d);
+  c.fillStyle = '#fff'; c.font = (12 * d) + 'px system-ui';
+  c.fillText('roll ' + roll.toFixed(1) + '°  pitch ' + pitch.toFixed(1) + '°', 12 * d, 22 * d);
+  c.fillStyle = '#ff9a9a'; c.fillText('raw accel roll ' + rawRoll.toFixed(1) + '°', 12 * d, 38 * d);
+}
+function droneStep() {
+  let base;
+  if (drone.src === 'cam' && vid.videoWidth) base = grabImage(vid, vid.videoWidth, vid.videoHeight);
+  else { const t = (performance.now() - drone.t0) / 1000; base = synthFrame(20 * Math.sin(0.3 * t), 18 * Math.sin(0.2 * t + 1), COLORS[vCol]); }
+  const img = drone.noise ? addNoise(base, val('vSig'), val('vSp') / 100, val('vLight'), val('vBlur')) : base;
+  const P = pipeline(img, vCol, val('vThr'), { med: true, morph: true });
+  const c = blitRGB($('dCam'), img); drawEst(c, P.est, '#2fbf71', false);
+  blitMask($('dMask'), P.mask, [79, 140, 255]);
+  if (P.est) {
+    const e = 0.03 * P.est.d * 0.5 + P.est.th * D2R; drone.steer = 0.7 * drone.steer + 0.3 * e;
+    $('dTh').textContent = P.est.th.toFixed(1) + '°'; $('dD').textContent = P.est.d.toFixed(1) + ' px';
+    $('dStat').innerHTML = '<span class="good">tracking</span>';
+  } else { $('dStat').innerHTML = '<span class="badc">no line</span>'; $('dTh').textContent = '–'; $('dD').textContent = '–'; }
+  const u = Math.max(-1, Math.min(1, -1.2 * drone.steer)), sb = $('dSteer');
+  sb.style.left = (u < 0 ? 50 + 50 * u : 50) + '%'; sb.style.width = Math.abs(50 * u) + '%';
+  $('dRoll').textContent = imu.comp.toFixed(1) + '°'; $('dPitch').textContent = imu.pitchComp.toFixed(1) + '°';
+  $('dVib').textContent = imu.peaks.length ? imu.peaks.map(p => p.toFixed(1)).join(', ') + ' Hz' : 'none';
+  drawHorizon(imu.comp, imu.pitchComp, imu.rawRoll);
+}
+
+// ---------- RESULTS ----------
+const RES = {};
+const tick = () => new Promise(r => setTimeout(r, 0));
+function fmt(v, dp) { return typeof v === 'number' ? v.toFixed(dp) : v; }
+function table(key, title, cols, rows, dps, bestIdx) {
+  RES[key] = { title, cols, rows };
+  let h = `<div class="tblwrap"><table class="tbl"><tr>${cols.map(c => `<th>${c}</th>`).join('')}</tr>`;
+  rows.forEach((r, i) => { h += `<tr class="${i === bestIdx ? 'best' : ''}">${r.map((v, j) => `<td>${j ? fmt(v, dps[j]) : v}</td>`).join('')}</tr>`; });
+  return h + '</table></div>';
+}
+function setProg(f, txt) { $('rProg').style.width = (100 * f) + '%'; if (txt) $('rStat').textContent = txt; }
+const VARS = [['None (raw threshold)', {}], ['Median 3×3', { med: 1 }], ['Gaussian 5×5', { gauss: 1 }], ['Morphology only', { morph: 1 }], ['Gaussian + morphology', { gauss: 1, morph: 1 }], ['Median + morphology (ours)', { med: 1, morph: 1 }]];
+const CONDS = [['Salt & pepper', { sig: 0.02, sp: 0.15, light: 0.3, blur: 3 }], ['Gaussian noise', { sig: 0.25, sp: 0, light: 0.3, blur: 3 }], ['Mixed: lighting + blur + both', { sig: 0.10, sp: 0.08, light: 0.7, blur: 7 }]];
+const TOL_TH = 3, TOL_D = 3;
+function visTrial(variants, nz, n, seed, onStep) {
+  setSeed(seed);
+  const acc = variants.map(() => ({ ok: 0, ea: [], ed: [], ms: 0 }));
+  for (let i = 0; i < n; i++) {
+    const th = -35 + 70 * rand(), d = -30 + 60 * rand();
+    const img = addNoise(synthFrame(th, d, COLORS.red), nz.sig, nz.sp, nz.light, nz.blur);
+    variants.forEach(([, o], k) => {
+      const t0 = performance.now(), e = pipeline(img, 'red', 0.45, o).est; acc[k].ms += performance.now() - t0;
+      const ea = e ? Math.min(Math.abs(e.th - th), 20) : 20, ed = e ? Math.min(Math.abs(e.d - d), 20) : 20;
+      acc[k].ea.push(ea); acc[k].ed.push(ed); if (ea < TOL_TH && ed < TOL_D) acc[k].ok++;
+    });
+    if (onStep) onStep(i);
+  }
+  clearSeed();
+  return acc.map(a => ({ succ: 100 * a.ok / n, ang: rms(a.ea), off: rms(a.ed), ms: a.ms / n }));
+}
+async function runE1(p0 = 0, p1 = 1) {
+  const N = 60; let html = '';
+  for (let c = 0; c < CONDS.length; c++) {
+    const [cname, nz] = CONDS[c];
+    const res = [];
+    for (let i = 0; i < N; i += 10) { res.push(visTrial(VARS, nz, 10, 1000 * c + i + 1)); setProg(p0 + (p1 - p0) * (c * N + i + 10) / (3 * N), 'E1 · ' + cname + '…'); await tick(); }
+    const agg = VARS.map((v, k) => ({ succ: res.reduce((s, r) => s + r[k].succ, 0) / res.length, ang: Math.sqrt(res.reduce((s, r) => s + r[k].ang ** 2, 0) / res.length), off: Math.sqrt(res.reduce((s, r) => s + r[k].off ** 2, 0) / res.length), ms: res.reduce((s, r) => s + r[k].ms, 0) / res.length }));
+    let best = 0; agg.forEach((a, k) => { if (a.succ > agg[best].succ || (a.succ === agg[best].succ && a.ang < agg[best].ang)) best = k; });
+    html += `<h3 style="margin-top:12px;text-transform:none">${cname}</h3>` + table('E1 ' + cname, 'E1 Vision · ' + cname + ` (${N} frames, success = |Δθ|<${TOL_TH}° and |Δd|<${TOL_D} px)`, ['Filter', 'Success %', 'Angle RMSE °', 'Offset RMSE px', 'ms/frame'], VARS.map((v, k) => [v[0], agg[k].succ, agg[k].ang, agg[k].off, agg[k].ms]), [0, 0, 2, 2, 1], best);
+    const raw = agg[0], med = agg[1], gau = agg[2], ours = agg[5];
+    const close = (a, b) => Math.abs(a - b) < 0.15;
+    let why;
+    if (c === 0) why = med.ang < gau.ang ? `Median beats Gaussian (${med.ang.toFixed(2)}° vs ${gau.ang.toFixed(2)}°): a median throws impulses away, while a Gaussian averages them into the neighbours.` : `Gaussian matched median here (${gau.ang.toFixed(2)}° vs ${med.ang.toFixed(2)}°).`;
+    else if (c === 1) why = gau.ang < med.ang ? `For Gaussian noise the Gaussian filter is the matched choice (${gau.ang.toFixed(2)}° vs median ${med.ang.toFixed(2)}°).` : `Even for Gaussian noise the median ${close(med.ang, gau.ang) ? 'roughly matches' : 'edges out'} the Gaussian (${med.ang.toFixed(2)}° vs ${gau.ang.toFixed(2)}°), because the colour threshold after it is non-linear; both remove most of the error.`;
+    else why = `Every smoothing filter clears most of the error. Gaussian (${gau.ang.toFixed(2)}°, ${gau.ms.toFixed(1)} ms) and our median + morphology (${ours.ang.toFixed(2)}°, ${ours.ms.toFixed(1)} ms) are ${close(gau.ang, ours.ang) ? 'within measurement spread of each other' : 'clearly different'}; the Gaussian is cheaper.`;
+    if (agg[3].ang > raw.ang) why += ` Morphology alone makes things worse (${agg[3].ang.toFixed(2)}°): opening/closing a noisy mask without smoothing first distorts the track edges.`;
+    html += `<div class="verdict">Best: <b>${VARS[best][0]}</b> (${agg[best].succ.toFixed(0)}% success, ${agg[best].ang.toFixed(2)}° error vs ${raw.succ.toFixed(0)}% / ${raw.ang.toFixed(2)}° with no filter). ${why}</div>`;
+  }
+  html += `<p class="hint">Differences under about 0.15° are within the spread of a 60-frame test.</p>`;
+  $('e1').innerHTML = html;
+}
+async function runE2(p0 = 0, p1 = 1) {
+  const lv = [0, 0.05, 0.1, 0.15, 0.2, 0.25], sel = [0, 1, 2, 5], N = 30, out = sel.map(() => []);
+  for (let j = 0; j < lv.length; j++) {
+    const r = visTrial(sel.map(k => VARS[k]), { sig: 0.05, sp: lv[j], light: 0.3, blur: 3 }, N, 500 + j);
+    r.forEach((v, k) => out[k].push(v));
+    setProg(p0 + (p1 - p0) * (j + 1) / lv.length, 'E2 · noise level ' + (lv[j] * 100) + '%…'); await tick();
+  }
+  const cv = $('e2c'); cv.style.display = 'block';
+  const cols = ['#ff6b6b', '#ffb020', '#c77dff', '#2fbf71'];
+  const xf = i => i / (lv.length - 1);
+  const ymax = Math.max(4, Math.ceil(Math.max(...out.flat().map(v => v.ang))));
+  const c = plotLines(cv, out.map((a, k) => ({ data: a.map(v => v.ang), color: cols[k], w: 2.4, x: xf })), 0, ymax, { fmt: v => v.toFixed(1) + '°' });
+  const dd = Math.min(window.devicePixelRatio || 1, 2); c.fillStyle = '#6f7a96'; c.font = (10 * dd) + 'px system-ui';
+  lv.forEach((l, i) => c.fillText((l * 100) + '%', Math.min(cv.width - 24 * dd, xf(i) * cv.width + 2), cv.height - 4 * dd));
+  let html = `<div class="legend">${sel.map((k, i) => `<span><em style="background:${cols[i]}"></em>${VARS[k][0]}</span>`).join('')}</div>`;
+  html += `<p class="hint">Angle error (RMS, lower is better) vs salt-and-pepper density, ${N} frames per point.</p>`;
+  html += table('E2', 'E2 Vision · angle RMSE (°) vs salt & pepper density', ['Filter', ...lv.map(l => (l * 100) + '%')], sel.map((k, i) => [VARS[k][0], ...out[i].map(v => v.ang)]), [0, 2, 2, 2, 2, 2, 2], 3);
+  const last = out.map(a => a[a.length - 1].ang);
+  const worstF = Math.max(...out.slice(1).flat().map(v => v.ang));
+  html += `<div class="verdict">With no filter the angle error climbs from ${out[0][0].ang.toFixed(2)}° to ${last[0].toFixed(2)}° as noise rises to 25%. Every filtered pipeline stays at or below ${worstF.toFixed(2)}° across the whole range, so the filters matter more as conditions get worse. At this level, median and Gaussian perform about the same.</div>`;
+  $('e2').innerHTML = html;
+}
+function findPeaks(m, fs, n, fmin) {
+  const df = fs / n, sorted = [...m].sort((a, b) => a - b), med = sorted[m.length >> 1] + 1e-6, mm = Array.from(m), found = [];
+  for (let k = 0; k < 2; k++) {
+    let bi = -1, bv = 0; for (let i = 1; i < mm.length; i++) if (i * df > fmin && mm[i] > bv) { bv = mm[i]; bi = i; }
+    if (bi < 0 || bv < 8 * med) break; found.push(bi * df);
+    for (let i = Math.max(0, bi - 3); i <= Math.min(mm.length - 1, bi + 3); i++) mm[i] = 0;
+  }
+  return found;
+}
+async function runE3(p0 = 0, p1 = 1) {
+  setSeed(77);
+  const fs = 100, n = 3000, dt = 1 / fs, fc = 3, tru = [], ax = [], ay = [], az = [], gy = [];
+  for (let i = 0; i < n; i++) {
+    const t = i * dt, r = 15 * Math.sin(2 * Math.PI * 0.2 * t) + 8 * Math.sin(2 * Math.PI * 0.5 * t + 1);
+    const rate = 15 * 2 * Math.PI * 0.2 * Math.cos(2 * Math.PI * 0.2 * t) + 8 * 2 * Math.PI * 0.5 * Math.cos(2 * Math.PI * 0.5 * t + 1);
+    const vib = 4 * Math.sin(2 * Math.PI * 18 * t) + 2 * Math.sin(2 * Math.PI * 36 * t);
+    tru.push(r); gy.push(rate + 1.5 + 0.8 * randn());
+    ax.push(G * Math.sin(r * D2R) + vib + 0.3 * randn()); ay.push(0.5 * vib + 0.3 * randn()); az.push(G * Math.cos(r * D2R) + 0.8 * vib + 0.3 * randn());
+  }
+  clearSeed();
+  const mag = ax.map((v, i) => Math.hypot(v, ay[i], az[i]));
+  const peaks = findPeaks(fftMag(mag.slice(0, 2048)), fs, 2048, fc + 1);
+  const chain = (notch, lp) => {
+    const out = [[], [], []];
+    [ax, ay, az].forEach((sig, a) => {
+      const ns = peaks.map(f => { const b = new Biquad(); b.notch(f, 8, fs); return b; });
+      const l = lp === 'iir' ? (() => { const b = new Biquad(); b.lowpass(fc, fs); return b; })() : lp === 'fir' ? (() => { const f = new FIR(); f.lowpass(fc, fs); return f; })() : null;
+      for (const x of sig) { let y = x; if (notch) for (const b of ns) y = b.step(y); if (l) y = l.step(y); out[a].push(y); }
+    });
+    return out[0].map((x, i) => Math.atan2(x, Math.hypot(out[1][i], out[2][i])) * R2D);
+  };
+  const accRaw = chain(false, null), accIIR = chain(false, 'iir'), accFIR = chain(false, 'fir'), accOurs = chain(true, 'iir'), accOursFIR = chain(true, 'fir');
+  setProg(p0 + (p1 - p0) * 0.5, 'E3 · fusion…'); await tick();
+  const gyro = [], comp = [], kal = []; let g = 0, cp = 0, ka = 0, kb = 0, P = [[1, 0], [0, 1]];
+  for (let i = 0; i < n; i++) {
+    g += gy[i] * dt; gyro.push(g);
+    cp = 0.98 * (cp + gy[i] * dt) + 0.02 * accOurs[i]; comp.push(cp);
+    ka += (gy[i] - kb) * dt;
+    const P00 = P[0][0] + dt * (dt * P[1][1] - P[0][1] - P[1][0] + 0.002), P01 = P[0][1] - dt * P[1][1], P10 = P[1][0] - dt * P[1][1], P11 = P[1][1] + 0.0003 * dt;
+    const S = P00 + 3, K0 = P00 / S, K1 = P10 / S, yv = accOurs[i] - ka; ka += K0 * yv; kb += K1 * yv;
+    P = [[P00 - K0 * P00, P01 - K0 * P01], [P10 - K1 * P00, P11 - K1 * P01]]; kal.push(ka);
+  }
+  const sk = 200, err = a => a.slice(sk).map((v, i) => v - tru[i + sk]);
+  const notchRows = [];
+  for (const fv of [5, 8, 12, 18]) {
+    setSeed(300 + fv); const bx = [], by = [], bz = [];
+    for (let i = 0; i < n; i++) { const vib = 4 * Math.sin(2 * Math.PI * fv * i * dt); bx.push(G * Math.sin(tru[i] * D2R) + vib + 0.3 * randn()); by.push(0.5 * vib + 0.3 * randn()); bz.push(G * Math.cos(tru[i] * D2R) + 0.8 * vib + 0.3 * randn()); }
+    clearSeed();
+    const pk = findPeaks(fftMag(bx.map((v, i) => Math.hypot(v, by[i], bz[i])).slice(0, 2048)), fs, 2048, 4);
+    const run = notch => { const o = [[], [], []]; [bx, by, bz].forEach((sg, a) => { const ns = notch ? pk.map(f => { const q = new Biquad(); q.notch(f, 8, fs); return q; }) : []; const l = new Biquad(); l.lowpass(fc, fs); for (const x of sg) { let y = x; for (const q of ns) y = q.step(y); o[a].push(l.step(y)); } }); return o[0].map((x, i) => Math.atan2(x, Math.hypot(o[1][i], o[2][i])) * R2D); };
+    notchRows.push([fv + ' Hz', rms(err(run(false))), rms(err(run(true))), pk.length ? pk[0].toFixed(1) + ' Hz' : 'none']);
+  }
+  const sig = tru.slice(sk).reduce((s, v) => s + v * v, 0), snr = a => 10 * Math.log10(sig / err(a).reduce((s, v) => s + v * v, 0));
+  const bq = new Biquad(); bq.lowpass(fc, fs); const fir = new FIR(); fir.lowpass(fc, fs);
+  const dI = 1000 * iirDelay(bq, 1, fs), dF = 1000 * fir.delay(fs);
+  const rows = [['Accel only (raw)', accRaw, '–'], ['Accel + IIR low-pass', accIIR, dI], ['Accel + FIR low-pass', accFIR, dF], ['Accel + notch + FIR', accOursFIR, dF], ['Accel + notch + IIR (ours)', accOurs, dI], ['Gyro only (integrated)', gyro, '–'], ['Complementary α=0.98 (ours)', comp, '–'], ['Kalman (angle + bias)', kal, '–']];
+  const R = rows.map(([nm, a, d]) => [nm, rms(err(a)), snr(a), d]);
+  let best = 0; R.forEach((r, k) => { if (r[1] < R[best][1]) best = k; });
+  const cv = $('e3c'); cv.style.display = 'block';
+  plotLines(cv, [{ data: accRaw.slice(0, 800), color: 'rgba(255,107,107,.5)', w: 1 }, { data: tru.slice(0, 800), color: '#fff', w: 2.2 }, { data: gyro.slice(0, 800), color: '#ffb020' }, { data: accOurs.slice(0, 800), color: '#4f8cff' }, { data: comp.slice(0, 800), color: '#2fbf71', w: 2 }], -40, 40, { fmt: v => v.toFixed(0) + '°' });
+  let html = `<div class="legend"><span><em style="background:#fff"></em>true</span><span><em style="background:#ff6b6b"></em>accel raw</span><span><em style="background:#4f8cff"></em>accel notch+IIR</span><span><em style="background:#ffb020"></em>gyro only</span><span><em style="background:#2fbf71"></em>complementary</span></div>`;
+  html += `<p class="hint">30 s of roll at 100 Hz, motor vibration at 18 and 36 Hz, gyro bias 1.5 °/s. FFT found peaks at ${peaks.map(f => f.toFixed(1)).join(' and ')} Hz.</p>`;
+  html += table('E3', 'E3 Inertial · roll estimation (30 s, vibration 18+36 Hz, gyro bias 1.5°/s)', ['Method', 'Roll RMSE °', 'SNR dB', 'LPF delay @1 Hz ms'], R, [0, 2, 1, 0], best);
+  html += `<h3 style="margin-top:12px;text-transform:none">When does the notch matter? (IIR low-pass at ${fc} Hz)</h3>` + table('E3b', 'E3b Notch on/off vs vibration frequency (IIR LPF at 3 Hz), roll RMSE °', ['Vibration', 'LPF only °', 'Notch + LPF °', 'FFT found'], notchRows, [0, 2, 2, 0], -1);
+  html += `<div class="verdict">FIR vs IIR: the FIR low-pass (${fir.h.length} taps, linear phase) delays the signal by ${dF.toFixed(0)} ms against ${dI.toFixed(0)} ms for the 2nd-order IIR Butterworth, so the IIR is the better choice for a control loop. ` +
+    `With vibration far above the cutoff (18/36 Hz) the low-pass alone already removes it, so the notch adds only ${(snr(accOurs) - snr(accIIR)).toFixed(1)} dB. When the vibration sits close to the cutoff, the notch cuts error from ${notchRows[0][1].toFixed(2)}° to ${notchRows[0][2].toFixed(2)}° at ${notchRows[0][0]}. That is why the FFT-guided notch is there: it lets you keep a higher, more responsive cutoff. Gyro-only drifts to ${rms(err(gyro)).toFixed(1)}° RMSE; fusing it with the filtered accelerometer gives ${R[6][1].toFixed(2)}° (complementary) and ${R[7][1].toFixed(2)}° (Kalman).</div>`;
+  $('e3').innerHTML = html;
+}
+async function runE4(p0 = 0, p1 = 1) {
+  setSeed(99);
+  const fs = 50, n = 2000, dt = 1 / fs, tru = [], z = [];
+  for (let i = 0; i < n; i++) { const h = altTrue(i * dt); tru.push(h); let v = h + 0.03 * randn(); if (rand() < 0.03) v += (rand() < 0.5 ? -1 : 1) * (0.3 + 0.3 * rand()); z.push(v); }
+  clearSeed();
+  const med = a => a.map((_, i) => { const w = a.slice(Math.max(0, i - 6), i + 1).sort((x, y) => x - y); return w[w.length >> 1]; });
+  const ma = a => a.map((_, i) => { const w = a.slice(Math.max(0, i - 14), i + 1); return w.reduce((s, v) => s + v, 0) / w.length; });
+  const kf = a => { let p = a[0], v = 0, P = [[1, 0], [0, 1]]; const out = [];
+    for (const y of a) { p += v * dt; const P00 = P[0][0] + dt * (P[1][0] + P[0][1]) + dt * dt * P[1][1] + 1e-6, P01 = P[0][1] + dt * P[1][1], P10 = P[1][0] + dt * P[1][1], P11 = P[1][1] + 2e-3;
+      const S = P00 + 0.0009, K0 = P00 / S, K1 = P10 / S, r = y - p; p += K0 * r; v += K1 * r; P = [[P00 - K0 * P00, P01 - K0 * P01], [P10 - K1 * P00, P11 - K1 * P01]]; out.push(p); } return out; };
+  const zm = med(z);
+  const rows = [['Raw sensor', z], ['Moving average (15)', ma(z)], ['Kalman only', kf(z)], ['Median (7)', zm], ['Median + moving average', ma(zm)], ['Median + Kalman (ours)', kf(zm)]];
+  const sig = tru.reduce((s, v) => s + v * v, 0);
+  const R = rows.map(([nm, a]) => { const e = a.map((v, i) => v - tru[i]); return [nm, 100 * rms(e), 10 * Math.log10(sig / e.reduce((s, v) => s + v * v, 0)), 100 * Math.max(...e.map(Math.abs))]; });
+  let best = 0; R.forEach((r, k) => { if (r[1] < R[best][1]) best = k; });
+  setProg(p1, 'E4 done'); await tick();
+  let html = `<p class="hint" style="margin-top:0">40 s at 50 Hz (two take-off/hover/landing cycles), noise 3 cm, 3% spikes of 30–60 cm.</p>`;
+  html += table('E4', 'E4 Altitude · 40 s, noise 3 cm, 3% spikes 30–60 cm', ['Filter', 'RMSE cm', 'SNR dB', 'Worst error cm'], R, [0, 2, 1, 1], best);
+  html += `<div class="verdict">Linear filters (moving average, Kalman) smear each spike into the neighbouring samples instead of removing it; worst error ${R[1][3].toFixed(0)} cm and ${R[2][3].toFixed(0)} cm. A median removes spikes first (worst ${R[3][3].toFixed(0)} cm), and the Kalman after it smooths what is left: ${R[0][2].toFixed(1)} dB → ${R[5][2].toFixed(1)} dB SNR.</div>`;
+  $('e4').innerHTML = html;
+}
+async function runE5(p0 = 0, p1 = 1) {
+  const nz = { sig: 0.12, sp: 0.12, light: 0.7 }, steps = 640, out = [];
+  setSeed(7);
+  const ds = [{ filt: false }, { filt: true }].map(o => ({ ...o, x: 0, y: 5, psi: 0, ef: 0, pe: 0, prev: { th: 0, d: 0, rho: 0 }, err: [], w: [], lost: null }));
+  const pts = trackPts();
+  for (let i = 0; i < steps; i++) {
+    for (const dr of ds) {
+      if (dr.lost !== null || dr.x > 900) continue;
+      const img = renderTrack(dr, nz), P = pipeline(img, 'red', 0.45, { med: dr.filt, morph: dr.filt });
+      const est = P.est || dr.prev; dr.prev = est;
+      const e = 0.03 * est.d * S_PX + est.th * D2R; dr.ef = dr.filt ? 0.6 * dr.ef + 0.4 * e : e;
+      const de = (dr.ef - dr.pe) / FDT; dr.pe = dr.ef; const w = -(1.2 * dr.ef + 0.1 * de);
+      dr.psi += w * FDT; dr.x += V * Math.cos(dr.psi) * FDT; dr.y += V * Math.sin(dr.psi) * FDT;
+      const [dd, sg] = segDist(dr.x, dr.y, pts); dr.err.push(dd * sg); dr.w.push(w); if (dd > 40) dr.lost = i * FDT;
+    }
+    if (i % 20 === 0) { setProg(p0 + (p1 - p0) * i / steps, 'E5 · flying ' + (i * FDT).toFixed(0) + ' s…'); await tick(); }
+  }
+  clearSeed();
+  const jerk = w => { const d = []; for (let i = 1; i < w.length; i++) d.push(w[i] - w[i - 1]); return rms(d); };
+  const R = ds.map(dr => [dr.filt ? 'Median + morph + low-pass (ours)' : 'Raw threshold, no low-pass', dr.lost === null ? 'yes' : 'lost at ' + dr.lost.toFixed(1) + ' s', rms(dr.err), Math.max(...dr.err.map(Math.abs)), jerk(dr.w)]);
+  let html = `<p class="hint" style="margin-top:0">Competition-style track, ${(steps * FDT).toFixed(0)} s, noise σ=0.12, salt & pepper 12%, uneven lighting. Same random noise sequence for both drones.</p>`;
+  html += table('E5', 'E5 Closed-loop flight (same noise, 32 s)', ['Pipeline', 'Stayed on track', 'Tracking RMSE cm', 'Max error cm', 'Steering jerk'], R, [0, 0, 2, 1, 3], 1);
+  html += `<div class="verdict">Steering is ${(R[0][4] / R[1][4]).toFixed(1)}× smoother with the DSP chain (jerk ${R[0][4].toFixed(3)} → ${R[1][4].toFixed(3)}). Tracking error is ${R[0][2].toFixed(1)} vs ${R[1][2].toFixed(1)} cm: the low-pass adds a little lag. That is the trade-off: smooth commands stop the oscillation a real drone's motors would turn jerky steering into.</div>`;
+  $('e5').innerHTML = html;
+}
+const RUN = { e1: runE1, e2: runE2, e3: runE3, e4: runE4, e5: runE5 };
+let busy = false;
+document.querySelectorAll('[data-run]').forEach(b => b.onclick = async () => {
+  if (busy) return; busy = true; const t0 = performance.now();
+  await RUN[b.dataset.run](0, 1); setProg(1, b.dataset.run.toUpperCase() + ' done in ' + ((performance.now() - t0) / 1000).toFixed(1) + ' s'); busy = false;
+});
+$('rAll').onclick = async () => {
+  if (busy) return; busy = true; const t0 = performance.now();
+  await runE1(0, 0.45); await runE2(0.45, 0.65); await runE3(0.65, 0.72); await runE4(0.72, 0.75); await runE5(0.75, 1);
+  setProg(1, 'All experiments done in ' + ((performance.now() - t0) / 1000).toFixed(0) + ' s. Same seed, so the numbers are identical every run.'); busy = false;
+};
+function resultsText(sep) {
+  let out = '';
+  for (const k in RES) { const r = RES[k]; out += (sep === ',' ? r.title.replace(/,/g, ';') : '### ' + r.title) + '\n';
+    const line = a => sep === ',' ? a.map(v => String(typeof v === 'number' ? v.toFixed(3) : v).replace(/,/g, ';')).join(',') : '| ' + a.map(v => typeof v === 'number' ? v.toFixed(2) : v).join(' | ') + ' |';
+    out += line(r.cols) + '\n'; if (sep !== ',') out += '|' + r.cols.map(() => '---').join('|') + '|\n';
+    r.rows.forEach(row => out += line(row) + '\n'); out += '\n'; }
+  return out;
+}
+$('rCopy').onclick = async () => {
+  if (!Object.keys(RES).length) { $('rStat').textContent = 'Run the experiments first.'; return; }
+  try { await navigator.clipboard.writeText(resultsText('|')); $('rStat').textContent = 'Tables copied as Markdown.'; } catch (e) { $('rStat').textContent = 'Clipboard blocked here: ' + e.name; }
+};
+$('rCsv').onclick = () => {
+  if (!Object.keys(RES).length) { $('rStat').textContent = 'Run the experiments first.'; return; }
+  const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([resultsText(',')], { type: 'text/csv' })); a.download = 'minidrone_dsp_results.csv';
+  document.body.appendChild(a); a.click(); a.remove(); $('rStat').textContent = 'CSV downloaded (if this page blocks downloads, use Copy tables).';
+};
+
 // ---------- main loop ----------
 function updBadge() {
   if (tab === 'vision') vSrc === 'cam' ? setBadge('LIVE camera', 'live') : vSrc === 'photo' ? setBadge('Your photo', 'live') : setBadge('Synthetic track', 'sim');
+  else if (tab === 'drone') setBadge((drone.src === 'cam' ? 'LIVE camera' : 'synthetic track') + ' · ' + (imu.live ? 'LIVE IMU' : 'sim IMU'), drone.src === 'cam' && imu.live ? 'live' : 'sim');
+  else if (tab === 'results') setBadge('Experiments', '');
   else if (tab === 'imu') imu.live ? setBadge('LIVE phone sensors', 'live') : setBadge('SIMULATED sensors', 'sim');
   else setBadge('Simulation', 'sim');
 }
-let lastV = 0, lastF = 0, altAcc = 0, lastA = performance.now();
+let lastV = 0, lastF = 0, lastD = 0, altAcc = 0, lastA = performance.now();
 function loop(now) {
   updBadge();
   if (tab === 'vision' && now - lastV > 60) { lastV = now; visionStep(); }
@@ -910,6 +1302,7 @@ function loop(now) {
   while (altAcc > 1 / AFS) { altTick(); altAcc -= 1 / AFS; }
   if (tab === 'alt') altDraw();
   if (tab === 'imu') imuDraw();
+  if (tab === 'drone' && now - lastD > 66) { lastD = now; droneStep(); }
   if (tab === 'flight' && now - lastF > 50) { lastF = now; flyStep(); if (fly.fast) flyStep(); flyDraw(); }
   requestAnimationFrame(loop);
 }
