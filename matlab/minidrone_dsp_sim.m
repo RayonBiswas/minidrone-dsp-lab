@@ -9,8 +9,8 @@ W = 160; H = 120;           % minidrone camera size
 thTrue = 20; dTrue = 15;
 clean = makeFrame(thTrue, dTrue, W, H);
 noisy = addNoise(clean, 0.10, 0.06);
-[estRaw, ~] = visionPipe(noisy, false);
-[est, st] = visionPipe(noisy, true);
+[estRaw, ~] = visionPipe(noisy, 'raw');
+[est, st] = visionPipe(noisy, 'ours');
 
 figure('Name', 'Vision pipeline', 'Color', 'w', 'Position', [50 100 1100 600]);
 subplot(2,3,1); imshow(clean); title('Ideal camera frame');
@@ -30,13 +30,13 @@ for i = 1:N
     th = -35 + 70*rand; d = -30 + 60*rand;
     img = addNoise(makeFrame(th, d, W, H), 0.10, 0.06);
 
-    tic; e = visionPipe(img, false); tR = tR + toc;
+    tic; e = visionPipe(img, 'raw'); tR = tR + toc;
     if ~isnan(e(1))
         eaR(end+1) = e(1) - th; edR(end+1) = e(2) - d;
         if abs(e(1) - th) < 5 && abs(e(2) - d) < 5, okR = okR + 1; end
     end
 
-    tic; e = visionPipe(img, true); tF = tF + toc;
+    tic; e = visionPipe(img, 'ours'); tF = tF + toc;
     if ~isnan(e(1))
         eaF(end+1) = e(1) - th; edF(end+1) = e(2) - d;
         if abs(e(1) - th) < 5 && abs(e(2) - d) < 5, okF = okF + 1; end
@@ -57,9 +57,9 @@ for j = 1:numel(spLevels)
     for i = 1:60
         th = -35 + 70*rand; d = -30 + 60*rand;
         img = addNoise(makeFrame(th, d, W, H), 0.10, spLevels(j));
-        e = visionPipe(img, false);
+        e = visionPipe(img, 'raw');
         if abs(e(1) - th) < 5 && abs(e(2) - d) < 5, accR(j) = accR(j) + 1; end
-        e = visionPipe(img, true);
+        e = visionPipe(img, 'ours');
         if abs(e(1) - th) < 5 && abs(e(2) - d) < 5, accF(j) = accF(j) + 1; end
     end
 end
@@ -69,6 +69,35 @@ plot(100*spLevels, 100*accF/60, 's-b', 'LineWidth', 1.5); grid on;
 xlabel('Salt-and-pepper density (%)'); ylabel('Detection accuracy (%)');
 legend('Raw threshold', 'Median + morphology', 'Location', 'southwest');
 title('Track detection under increasing noise'); ylim([0 105]);
+
+%% 2b. Vision ablation - filter vs filter under three noise types
+modes = {'raw', 'median', 'gauss', 'morph', 'gauss+morph', 'ours'};
+names = {'None (raw)', 'Median 3x3', 'Gaussian 5x5', 'Morphology only', 'Gaussian + morph', 'Median + morph (ours)'};
+conds = {'Salt & pepper', 0.02, 0.15; 'Gaussian noise', 0.25, 0; 'Mixed', 0.10, 0.08};
+Na = 60; abl = zeros(numel(modes), 3);
+for c = 1:3
+    rng(100 + c);
+    succ = zeros(1, numel(modes)); ea = zeros(Na, numel(modes)); tm = zeros(1, numel(modes));
+    for i = 1:Na
+        th = -35 + 70*rand; d = -30 + 60*rand;
+        img = addNoise(makeFrame(th, d, W, H), conds{c,2}, conds{c,3});
+        for k = 1:numel(modes)
+            tic; e = visionPipe(img, modes{k}); tm(k) = tm(k) + toc;
+            if isnan(e(1)), e = [th + 20, d + 20]; end
+            ea(i,k) = min(abs(e(1) - th), 20);
+            if abs(e(1) - th) < 3 && abs(e(2) - d) < 3, succ(k) = succ(k) + 1; end
+        end
+    end
+    abl(:,c) = sqrt(mean(ea.^2))';
+    fprintf('\nABLATION - %s (%d frames, success = |dtheta|<3 deg and |dd|<3 px)\n', conds{c,1}, Na);
+    fprintf('%-24s %9s %12s %10s\n', 'Filter', 'success %', 'angle RMSE', 'ms/frame');
+    for k = 1:numel(modes)
+        fprintf('%-24s %9.0f %10.2f deg %8.1f\n', names{k}, 100*succ(k)/Na, abl(k,c), 1000*tm(k)/Na);
+    end
+end
+figure('Name', 'Vision ablation', 'Color', 'w');
+bar(abl); grid on; ylabel('Angle RMSE (deg)'); title('Filter vs filter under three noise types');
+set(gca, 'XTickLabel', names, 'XTickLabelRotation', 25); legend(conds(:,1), 'Location', 'northeast');
 
 %% 3. Inertial path - FFT + notch + low-pass, complementary and Kalman fusion
 fs = 200; T = 20; t = (0:1/fs:T-1/fs)'; n = numel(t); g = 9.81;
@@ -95,6 +124,10 @@ azf = filter(bl, al, filter(bn2, an2, filter(bn1, an1, az)));
 
 accRaw = atan2(ay, az);
 accF = atan2(ayf, azf);
+bfir = fir1(60, 5/(fs/2));
+ayFir = filter(bfir, 1, filter(bn2, an2, filter(bn1, an1, ay)));
+azFir = filter(bfir, 1, filter(bn2, an2, filter(bn1, an1, az)));
+accFir = atan2(ayFir, azFir);
 gyroOnly = cumsum(gyro)/fs;
 
 alpha = 0.98; comp = zeros(n,1);
@@ -113,13 +146,14 @@ end
 
 imu.accRaw = rad2deg(rms(accRaw - roll));
 imu.accF = rad2deg(rms(accF - roll));
+imu.accFir = rad2deg(rms(accFir - roll));
 imu.gyro = rad2deg(rms(gyroOnly - roll));
 imu.comp = rad2deg(rms(comp - roll));
 imu.kal = rad2deg(rms(kal - roll));
 
-bfir = fir1(60, 5/(fs/2));
 gdI = grpdelay(bl, al, [1 2], fs); gdF = grpdelay(bfir, 1, [1 2], fs);
 fprintf('Phase delay at 1 Hz: IIR Butterworth %.1f ms, FIR (61 taps) %.1f ms\n', 1000*gdI(1)/fs, 1000*gdF(1)/fs);
+fprintf('Roll RMSE accel: IIR low-pass %.2f deg vs FIR low-pass %.2f deg (FIR lags more)\n', imu.accF, imu.accFir);
 fprintf('Roll RMSE: accel raw %.2f | accel filtered %.2f | gyro only %.2f | complementary %.2f | Kalman %.2f deg\n', ...
     imu.accRaw, imu.accF, imu.gyro, imu.comp, imu.kal);
 
@@ -240,17 +274,25 @@ img = min(max(img, 0), 1);
 img = imnoise(img, 'salt & pepper', sp);          % per-channel impulses, like a real sensor
 end
 
-function [est, st] = visionPipe(img, filt)
+function [est, st] = visionPipe(img, mode)
 [H, W, ~] = size(img);
 xc = (W-1)/2; yc = (H-1)/2;
 hsv = rgb2hsv(img);
 st.raw = (hsv(:,:,1) < 0.06 | hsv(:,:,1) > 0.94) & hsv(:,:,2) > 0.45 & hsv(:,:,3) > 0.15;
 bw = st.raw;
-if filt
-    med = img;
-    for k = 1:3, med(:,:,k) = medfilt2(img(:,:,k), [3 3]); end   % median on the image first
-    hsv = rgb2hsv(med);
+useMed = any(strcmp(mode, {'median', 'ours'}));
+useGauss = any(strcmp(mode, {'gauss', 'gauss+morph'}));
+useMorph = any(strcmp(mode, {'morph', 'gauss+morph', 'ours'}));
+if useMed || useGauss
+    pre = img;
+    for k = 1:3
+        if useMed, pre(:,:,k) = medfilt2(pre(:,:,k), [3 3]); end          % median on the image first
+        if useGauss, pre(:,:,k) = imgaussfilt(pre(:,:,k), 1, 'FilterSize', 5); end
+    end
+    hsv = rgb2hsv(pre);
     bw = (hsv(:,:,1) < 0.06 | hsv(:,:,1) > 0.94) & hsv(:,:,2) > 0.45 & hsv(:,:,3) > 0.15;
+end
+if useMorph
     bw = imopen(imclose(bw, strel('disk', 2)), strel('disk', 2));
 end
 st.mask = bw;
@@ -318,7 +360,8 @@ if live
 end
 for i = 1:steps
     img = renderTrack(x, y, psi, trk, W, H);
-    [est, st] = visionPipe(img, filt);
+    if filt, mode = 'ours'; else, mode = 'raw'; end
+    [est, st] = visionPipe(img, mode);
     if isnan(est(1)), est = prev; end
     prev = est;
     e = 0.03*est(2)*trk.s + deg2rad(est(1));      % steering error from offset + angle

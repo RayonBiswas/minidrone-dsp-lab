@@ -10,7 +10,12 @@ Classical DSP (no AI/ML) for camera, IMU and altitude signals: DSP course projec
 | Inertial | FFT peak search → auto notch → low-pass → atan2 roll → complementary / Kalman fusion with gyro |
 | Altitude | Median → moving average / 1D Kalman |
 
-- `index.html`: the phone web app (vision, IMU, altitude, closed-loop flight). It falls back to simulated sensors when the real ones are unavailable.
+- `index.html`: the phone web app. Tabs:
+  - **Camera / IMU / Altitude**: each path on its own, with filters you can switch off and sliders that inject noise
+  - **Flight**: closed loop, comparing a raw drone and a DSP drone on the same noisy camera
+  - **Drone**: camera and IMU together (track tracking plus an artificial horizon showing roll and pitch); hold the phone flat with the back camera facing down
+  - **Results**: runs every comparison from the proposal with a fixed seed (E1 filter vs filter, E2 accuracy vs noise, E3 FIR vs IIR, notch and fusion, E4 altitude, E5 flight), then Copy tables or Download CSV
+  - Falls back to simulated sensors when the real ones are unavailable.
 - `matlab/minidrone_dsp_sim.m`: the full simulation in MATLAB (Image Processing and Signal Processing Toolboxes).
 - `matlab/phone_sensor_demo.m`: the same pipeline on real phone data via MATLAB Mobile (`mobiledev`).
 
