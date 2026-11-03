@@ -1,0 +1,922 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>Mini-Drone DSP Lab</title>
+<style>
+:root{--bg:#0f1420;--card:#171e2e;--line:#26304a;--txt:#e6ebf5;--mut:#8a96b3;--acc:#4f8cff;--ok:#2fbf71;--bad:#ff5a5f;--warn:#ffb020}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+body{margin:0;background:var(--bg);color:var(--txt);font:14px/1.4 system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
+header{padding:12px 14px 6px;display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+header h1{font-size:17px;margin:0;font-weight:650;flex:1;min-width:200px}
+header h1 small{display:block;font-size:11.5px;color:var(--mut);font-weight:400}
+.badge{font-size:11px;padding:3px 8px;border-radius:20px;border:1px solid var(--line);color:var(--mut);white-space:nowrap}
+.badge.live{color:#fff;background:var(--ok);border-color:var(--ok)}
+.badge.sim{color:#111;background:var(--warn);border-color:var(--warn)}
+nav{display:flex;gap:6px;padding:6px 12px 10px;position:sticky;top:0;background:var(--bg);z-index:5;overflow-x:auto}
+nav button{flex:1;min-width:76px;padding:9px 6px;border-radius:10px;border:1px solid var(--line);background:var(--card);color:var(--mut);font-weight:600;font-size:13px}
+nav button.on{background:var(--acc);color:#fff;border-color:var(--acc)}
+section{display:none;padding:0 12px 40px;max-width:900px;margin:0 auto}
+section.on{display:block}
+.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:12px;margin-bottom:10px}
+.card h3{margin:0 0 8px;font-size:13px;color:var(--mut);font-weight:600;text-transform:uppercase;letter-spacing:.04em}
+.pipe{display:flex;flex-wrap:wrap;align-items:center;gap:4px}
+.chip{padding:6px 9px;border-radius:8px;font-size:12px;border:1px solid var(--line);background:#1d2539;color:var(--txt);user-select:none}
+.chip.t{cursor:pointer;border-style:dashed}
+.chip.t.on{background:#1b3a6b;border:1px solid var(--acc);color:#fff}
+.chip.t:not(.on){opacity:.55;text-decoration:line-through}
+.arr{color:var(--mut);font-size:11px}
+.hint{font-size:11.5px;color:var(--mut);margin-top:6px}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.panel{position:relative}
+.panel canvas{width:100%;display:block;border-radius:8px;background:#000;image-rendering:pixelated}
+.panel span{position:absolute;left:6px;top:5px;font-size:10.5px;background:rgba(0,0,0,.6);padding:1px 6px;border-radius:6px}
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:6px}
+.stat{background:#1d2539;border-radius:10px;padding:7px 9px}
+.stat b{display:block;font-size:17px;font-variant-numeric:tabular-nums}
+.stat i{font-style:normal;font-size:11px;color:var(--mut)}
+.good{color:var(--ok)}.badc{color:var(--bad)}
+.row{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px}
+.btn{padding:9px 12px;border-radius:10px;border:1px solid var(--line);background:#1d2539;color:var(--txt);font-weight:600;font-size:13px}
+.btn.on,.btn.pri{background:var(--acc);border-color:var(--acc);color:#fff}
+.sl{display:grid;grid-template-columns:118px 1fr 52px;align-items:center;gap:8px;margin:7px 0;font-size:12.5px}
+.sl output{text-align:right;color:var(--mut);font-variant-numeric:tabular-nums}
+input[type=range]{width:100%;accent-color:var(--acc)}
+.legend{display:flex;flex-wrap:wrap;gap:10px;font-size:11.5px;color:var(--mut);margin-top:6px}
+.legend em{display:inline-block;width:14px;height:3px;border-radius:2px;margin-right:4px;vertical-align:middle}
+canvas.plot{width:100%;height:190px;display:block;background:#0b101a;border-radius:8px}
+.steer{height:26px;background:#0b101a;border-radius:8px;position:relative;overflow:hidden}
+.steer div{position:absolute;top:0;bottom:0;left:50%;background:var(--acc);transition:all .08s}
+.steer:after{content:"";position:absolute;left:50%;top:0;bottom:0;width:2px;background:#fff}
+.msg{font-size:12.5px;color:var(--warn);margin:6px 0 0}
+.cols{display:grid;grid-template-columns:1fr;gap:10px}
+@media(min-width:760px){.cols{grid-template-columns:1.25fr 1fr}}
+</style>
+</head>
+<body>
+<header>
+  <h1>Noise-Robust Path Tracking · DSP Lab<small>Classical DSP on live phone sensors: camera, accelerometer, gyroscope</small></h1>
+  <span class="badge" id="badge">idle</span>
+</header>
+<nav>
+  <button data-tab="vision" class="on">Camera</button>
+  <button data-tab="imu">IMU</button>
+  <button data-tab="alt">Altitude</button>
+  <button data-tab="flight">Flight</button>
+</nav>
+
+<!-- ================= VISION ================= -->
+<section id="vision" class="on">
+  <div class="card">
+    <h3>Vision pipeline <span style="text-transform:none;font-weight:400">(tap dashed blocks to switch them off)</span></h3>
+    <div class="pipe" id="vPipe">
+      <span class="chip">Camera</span><span class="arr">→</span>
+      <span class="chip t on" data-k="median">Median 3×3</span><span class="arr">→</span>
+      <span class="chip">RGB→HSV threshold</span><span class="arr">→</span>
+      <span class="chip t on" data-k="morph">Close + Open</span><span class="arr">→</span>
+      <span class="chip">Edges</span><span class="arr">→</span>
+      <span class="chip">Hough</span><span class="arr">→</span>
+      <span class="chip t on" data-k="lpf">Low-pass</span><span class="arr">→</span>
+      <span class="chip">PID steer</span>
+    </div>
+  </div>
+  <div class="card">
+    <div class="row">
+      <button class="btn on" data-src="synth">Synthetic track</button>
+      <button class="btn" data-src="cam">Phone camera</button>
+      <button class="btn" data-src="photo">Photo</button>
+      <input type="file" id="photoIn" accept="image/*" hidden>
+    </div>
+    <div class="row" id="colRow">
+      <button class="btn on" data-col="red">Red</button>
+      <button class="btn" data-col="blue">Blue</button>
+      <button class="btn" data-col="green">Green</button>
+      <button class="btn" data-col="yellow">Yellow</button>
+      <button class="btn" data-col="black">Black</button>
+    </div>
+    <video id="vid" playsinline muted hidden></video>
+    <div class="grid2">
+      <div class="panel"><canvas id="c1" width="320" height="240"></canvas><span>1 · input + injected noise</span></div>
+      <div class="panel"><canvas id="c2" width="320" height="240"></canvas><span>2 · HSV threshold (raw)</span></div>
+      <div class="panel"><canvas id="c3" width="320" height="240"></canvas><span>3 · filtered mask</span></div>
+      <div class="panel"><canvas id="c4" width="320" height="240"></canvas><span>4 · edges + Hough line</span></div>
+    </div>
+    <div class="legend"><span><em style="background:#2fbf71"></em>DSP pipeline</span><span><em style="background:#ffd23f"></em>raw (no filters)</span><span id="truthLeg"><em style="background:#fff"></em>ground truth</span></div>
+    <p class="msg" id="vMsg"></p>
+  </div>
+  <div class="card">
+    <h3>Steering command</h3>
+    <div class="steer"><div id="steerBar"></div></div>
+    <div class="stats" style="margin-top:8px">
+      <div class="stat"><i>Line angle θ</i><b id="sTh">–</b></div>
+      <div class="stat"><i>Offset d</i><b id="sD">–</b></div>
+      <div class="stat"><i>θ jitter frame-to-frame</i><b id="sJit">–</b></div>
+      <div class="stat" id="accBox"><i>Angle error vs truth (RMS)</i><b id="sAcc">–</b></div>
+      <div class="stat"><i>Processing time</i><b id="sMs">–</b></div>
+    </div>
+  </div>
+  <div class="card">
+    <h3>Inject noise</h3>
+    <div class="sl"><label>Gaussian σ</label><input type="range" id="vSig" min="0" max="0.3" step="0.01" value="0.10"><output></output></div>
+    <div class="sl"><label>Salt &amp; pepper %</label><input type="range" id="vSp" min="0" max="25" step="1" value="8"><output></output></div>
+    <div class="sl"><label>Uneven lighting</label><input type="range" id="vLight" min="0" max="1.2" step="0.05" value="0.7"><output></output></div>
+    <div class="sl"><label>Motion blur (px)</label><input type="range" id="vBlur" min="1" max="11" step="2" value="7"><output></output></div>
+    <h3 style="margin-top:12px">Threshold</h3>
+    <div class="sl"><label id="thrLbl">Saturation min</label><input type="range" id="vThr" min="0.1" max="0.9" step="0.01" value="0.45"><output></output></div>
+    <div id="synthCtl">
+      <h3 style="margin-top:12px">Synthetic track</h3>
+      <div class="row"><button class="btn on" id="autoTrack">Auto-move track</button></div>
+      <div class="sl"><label>Track angle (°)</label><input type="range" id="vTh" min="-40" max="40" step="1" value="15"><output></output></div>
+      <div class="sl"><label>Track offset (px)</label><input type="range" id="vD" min="-35" max="35" step="1" value="10"><output></output></div>
+    </div>
+  </div>
+</section>
+
+<!-- ================= IMU ================= -->
+<section id="imu">
+  <div class="card">
+    <h3>Inertial pipeline</h3>
+    <div class="pipe" id="iPipe">
+      <span class="chip">Accel</span><span class="arr">→</span>
+      <span class="chip">FFT peak search</span><span class="arr">→</span>
+      <span class="chip t on" data-k="notch">Auto notch</span><span class="arr">→</span>
+      <span class="chip t on" data-k="lpf">Low-pass</span><span class="arr">→</span>
+      <span class="chip">roll = atan2</span><span class="arr">→</span>
+      <span class="chip">⊕ Gyro (∫)</span><span class="arr">→</span>
+      <span class="chip">Complementary / Kalman</span>
+    </div>
+    <div class="row" style="margin-top:10px">
+      <button class="btn pri" id="imuStart">Start phone sensors</button>
+      <button class="btn" id="gyroReset">Reset gyro</button>
+    </div>
+    <p class="hint">Hold the phone flat and tilt it left/right (roll). Put it on a running fan or vibrating motor, or inject vibration below. The FFT finds the peak and the notch filter moves to it on its own.</p>
+    <p class="msg" id="iMsg"></p>
+  </div>
+  <div class="cols">
+    <div class="card">
+      <h3>Roll angle</h3>
+      <canvas class="plot" id="pRoll"></canvas>
+      <div class="legend">
+        <span id="lgTrue"><em style="background:#fff"></em>true (sim)</span>
+        <span><em style="background:#ff6b6b"></em>accel raw</span>
+        <span><em style="background:#4f8cff"></em>accel filtered</span>
+        <span><em style="background:#ffb020"></em>gyro only</span>
+        <span><em style="background:#2fbf71"></em>complementary</span>
+        <span><em style="background:#c77dff"></em>Kalman</span>
+      </div>
+    </div>
+    <div class="card">
+      <h3>Drone attitude</h3>
+      <canvas class="plot" id="pAtt"></canvas>
+      <div class="legend"><span><em style="background:#ff6b6b"></em>raw accel</span><span><em style="background:#2fbf71"></em>fused estimate</span></div>
+    </div>
+  </div>
+  <div class="card">
+    <h3>Accelerometer spectrum (FFT)</h3>
+    <canvas class="plot" id="pSpec"></canvas>
+    <div class="legend"><span><em style="background:#ff6b6b"></em>before</span><span><em style="background:#4f8cff"></em>after notch + LPF</span><span><em style="background:#ffd23f"></em>detected peak / notch</span></div>
+    <div class="stats" style="margin-top:8px">
+      <div class="stat"><i>Sample rate</i><b id="iFs">–</b></div>
+      <div class="stat"><i>Vibration peak</i><b id="iPeak">–</b></div>
+      <div class="stat"><i>Accel roll noise raw → filtered</i><b id="iNoise">–</b></div>
+      <div class="stat"><i>Gyro-only drift</i><b id="iDrift">–</b></div>
+    </div>
+  </div>
+  <div class="card">
+    <h3>Inject noise</h3>
+    <div class="sl"><label>Vibration (m/s²)</label><input type="range" id="iVibA" min="0" max="6" step="0.1" value="0"><output></output></div>
+    <div class="sl"><label>Vibration freq (Hz)</label><input type="range" id="iVibF" min="3" max="45" step="0.5" value="18"><output></output></div>
+    <div class="sl"><label>Gyro bias (°/s)</label><input type="range" id="iBias" min="0" max="5" step="0.1" value="1.5"><output></output></div>
+    <div class="sl"><label>Extra accel noise</label><input type="range" id="iNz" min="0" max="2" step="0.05" value="0"><output></output></div>
+    <h3 style="margin-top:12px">Tune filters</h3>
+    <div class="sl"><label>LPF cutoff (Hz)</label><input type="range" id="iFc" min="0.5" max="10" step="0.5" value="3"><output></output></div>
+    <div class="sl"><label>Notch Q</label><input type="range" id="iQ" min="2" max="30" step="1" value="8"><output></output></div>
+    <div class="sl"><label>Complementary α</label><input type="range" id="iAlpha" min="0.8" max="0.995" step="0.005" value="0.98"><output></output></div>
+    <div id="simCtl">
+      <h3 style="margin-top:12px">Simulated motion</h3>
+      <div class="row"><button class="btn on" id="autoRoll">Auto motion</button></div>
+      <div class="sl"><label>Manual tilt (°)</label><input type="range" id="iTilt" min="-40" max="40" step="1" value="0"><output></output></div>
+    </div>
+  </div>
+</section>
+
+<!-- ================= ALTITUDE ================= -->
+<section id="alt">
+  <div class="card">
+    <h3>Altitude pipeline</h3>
+    <div class="pipe" id="aPipe">
+      <span class="chip">Height sensor</span><span class="arr">→</span>
+      <span class="chip t on" data-k="median">Median (7)</span><span class="arr">→</span>
+      <span class="chip t" data-k="ma">Moving avg (15)</span><span class="arr">→</span>
+      <span class="chip t on" data-k="kal">1D Kalman</span><span class="arr">→</span>
+      <span class="chip">Height</span>
+    </div>
+    <p class="hint">Simulated take-off, hover and landing, looping. Tap "Spike burst" to throw false readings at it.</p>
+  </div>
+  <div class="card">
+    <canvas class="plot" id="pAlt" style="height:230px"></canvas>
+    <div class="legend"><span><em style="background:#fff"></em>true</span><span><em style="background:#ff6b6b"></em>raw sensor</span><span><em style="background:#2fbf71"></em>filtered output</span></div>
+    <div class="stats" style="margin-top:8px">
+      <div class="stat"><i>RMSE raw → filtered</i><b id="aRmse">–</b></div>
+      <div class="stat"><i>SNR raw → filtered</i><b id="aSnr">–</b></div>
+      <div class="stat"><i>Phase</i><b id="aPh">–</b></div>
+    </div>
+  </div>
+  <div class="card">
+    <div class="row"><button class="btn pri" id="aBurst">Spike burst</button></div>
+    <div class="sl"><label>Noise σ (cm)</label><input type="range" id="aSig" min="0" max="10" step="0.5" value="3"><output></output></div>
+    <div class="sl"><label>Spike rate %</label><input type="range" id="aSp" min="0" max="15" step="0.5" value="2"><output></output></div>
+    <div class="sl"><label>Spike size (cm)</label><input type="range" id="aSz" min="10" max="80" step="5" value="45"><output></output></div>
+  </div>
+</section>
+
+<!-- ================= FLIGHT ================= -->
+<section id="flight">
+  <div class="card">
+    <h3>Closed-loop flight: two drones, same noisy camera</h3>
+    <p class="hint" style="margin-top:0">A competition-style track of straight segments and corners. The yellow drone steers from the raw threshold; the blue drone runs the full DSP chain (median, morphology, low-pass). Both see the same noise level, with fresh random noise on every frame.</p>
+    <canvas class="plot" id="pFly" style="height:200px"></canvas>
+    <h3 style="margin-top:10px">Steering command (yaw rate)</h3>
+    <canvas class="plot" id="pSteer" style="height:120px"></canvas>
+    <div class="legend"><span><em style="background:#ffd23f"></em>raw drone</span><span><em style="background:#4f8cff"></em>DSP drone</span></div>
+    <div class="grid2" style="margin-top:8px">
+      <div class="panel"><canvas id="fR" width="320" height="240"></canvas><span style="color:#ffd23f">raw drone camera</span></div>
+      <div class="panel"><canvas id="fF" width="320" height="240"></canvas><span style="color:#8fb6ff">DSP drone camera</span></div>
+    </div>
+    <div class="stats" style="margin-top:8px">
+      <div class="stat"><i>Raw drone</i><b id="fsR">–</b></div>
+      <div class="stat"><i>DSP drone</i><b id="fsF">–</b></div>
+      <div class="stat"><i>Steering jerk raw → DSP</i><b id="fJ">–</b></div>
+      <div class="stat"><i>Flight time</i><b id="fT">–</b></div>
+    </div>
+  </div>
+  <div class="card">
+    <div class="row"><button class="btn pri" id="fGo">Restart flight</button><button class="btn" id="fFast">2× speed</button></div>
+    <div class="sl"><label>Gaussian σ</label><input type="range" id="fSig" min="0" max="0.3" step="0.01" value="0.12"><output></output></div>
+    <div class="sl"><label>Salt &amp; pepper %</label><input type="range" id="fSp" min="0" max="25" step="1" value="12"><output></output></div>
+    <div class="sl"><label>Uneven lighting</label><input type="range" id="fLight" min="0" max="1.2" step="0.05" value="0.7"><output></output></div>
+    <div class="sl"><label>Corner sharpness</label><input type="range" id="fA" min="10" max="70" step="5" value="40"><output></output></div>
+  </div>
+</section>
+
+<script>
+"use strict";
+// ---------- helpers ----------
+const $ = id => document.getElementById(id);
+const W = 160, H = 120, XC = (W - 1) / 2, YC = (H - 1) / 2;
+const D2R = Math.PI / 180, R2D = 180 / Math.PI;
+function randn() { let u = 0, v = 0; while (!u) u = Math.random(); while (!v) v = Math.random(); return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v); }
+const val = id => parseFloat($(id).value);
+function std(a) { if (a.length < 2) return 0; const m = a.reduce((s, x) => s + x, 0) / a.length; return Math.sqrt(a.reduce((s, x) => s + (x - m) ** 2, 0) / a.length); }
+function rms(a) { return a.length ? Math.sqrt(a.reduce((s, x) => s + x * x, 0) / a.length) : 0; }
+document.querySelectorAll('.sl input').forEach(inp => {
+  const o = inp.parentElement.querySelector('output');
+  const upd = () => o.textContent = inp.value; inp.addEventListener('input', upd); upd();
+});
+function chips(pipeId) {
+  const st = {};
+  document.querySelectorAll('#' + pipeId + ' .chip.t').forEach(c => {
+    st[c.dataset.k] = c.classList.contains('on');
+    c.onclick = () => { c.classList.toggle('on'); st[c.dataset.k] = c.classList.contains('on'); };
+  });
+  return st;
+}
+function setBadge(txt, cls) { const b = $('badge'); b.textContent = txt; b.className = 'badge ' + (cls || ''); }
+function sizeCanvas(c) {
+  const r = c.getBoundingClientRect(), d = Math.min(window.devicePixelRatio || 1, 2);
+  if (c.width !== Math.round(r.width * d) || c.height !== Math.round(r.height * d)) { c.width = Math.round(r.width * d); c.height = Math.round(r.height * d); }
+  return d;
+}
+
+// ---------- tabs ----------
+let tab = 'vision';
+document.querySelectorAll('nav button').forEach(b => b.onclick = () => {
+  document.querySelectorAll('nav button').forEach(x => x.classList.toggle('on', x === b));
+  document.querySelectorAll('section').forEach(s => s.classList.toggle('on', s.id === b.dataset.tab));
+  tab = b.dataset.tab;
+  if (tab === 'flight' && !fly.started) flyReset();
+});
+
+// ---------- image DSP ----------
+const COLORS = { red: [0.8, 0.15, 0.1], blue: [0.1, 0.25, 0.8], green: [0.1, 0.6, 0.2], yellow: [0.9, 0.8, 0.1], black: [0.07, 0.07, 0.07] };
+const HUE = { red: [0, 0.06], yellow: [0.15, 0.05], green: [0.33, 0.09], blue: [0.62, 0.09] };
+const BG = [0.55, 0.55, 0.5];
+
+function paint(onFn, col) {
+  const img = new Float32Array(W * H * 3);
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+    const c = onFn(x, y) ? col : BG, i = (y * W + x) * 3;
+    img[i] = c[0]; img[i + 1] = c[1]; img[i + 2] = c[2];
+  }
+  return img;
+}
+function synthFrame(thDeg, d, col) {
+  const c = Math.cos(thDeg * D2R), s = Math.sin(thDeg * D2R), rho = XC * c + YC * s + d;
+  return paint((x, y) => Math.abs(x * c + y * s - rho) < 6, col);
+}
+function addNoise(src, sig, sp, light, blur) {
+  let img = new Float32Array(src.length);
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+    const g = 1 - light / 2 + light * x / W, i = (y * W + x) * 3;
+    img[i] = src[i] * g; img[i + 1] = src[i + 1] * g; img[i + 2] = src[i + 2] * g;
+  }
+  if (blur > 1) {
+    const out = new Float32Array(img.length), h = (blur - 1) / 2;
+    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) for (let k = 0; k < 3; k++) {
+      let s = 0; for (let j = -h; j <= h; j++) { const xx = Math.min(W - 1, Math.max(0, x + j)); s += img[(y * W + xx) * 3 + k]; }
+      out[(y * W + x) * 3 + k] = s / blur;
+    }
+    img = out;
+  }
+  for (let i = 0; i < img.length; i++) {
+    const r = Math.random();
+    if (r < sp / 2) img[i] = 0;
+    else if (r > 1 - sp / 2) img[i] = 1;
+    else img[i] = Math.min(1, Math.max(0, img[i] + sig * randn()));
+  }
+  return img;
+}
+function threshold(img, colName, thr) {
+  const m = new Uint8Array(W * H);
+  for (let p = 0; p < W * H; p++) {
+    const r = img[p * 3], g = img[p * 3 + 1], b = img[p * 3 + 2];
+    const mx = Math.max(r, g, b), mn = Math.min(r, g, b), dd = mx - mn, v = mx, s = mx > 0 ? dd / mx : 0;
+    if (colName === 'black') { m[p] = v < thr ? 1 : 0; continue; }
+    let h = 0;
+    if (dd > 0) { if (mx === r) h = ((g - b) / dd) % 6; else if (mx === g) h = (b - r) / dd + 2; else h = (r - g) / dd + 4; h /= 6; if (h < 0) h += 1; }
+    const [hc, hw] = HUE[colName];
+    let dh = Math.abs(h - hc); dh = Math.min(dh, 1 - dh);
+    m[p] = (dh < hw && s > thr && v > 0.15) ? 1 : 0;
+  }
+  return m;
+}
+function med9(a) {
+  const sw = (i, j) => { if (a[i] > a[j]) { const t = a[i]; a[i] = a[j]; a[j] = t; } };
+  sw(1,2);sw(4,5);sw(7,8);sw(0,1);sw(3,4);sw(6,7);sw(1,2);sw(4,5);sw(7,8);sw(0,3);sw(5,8);sw(4,7);sw(3,6);sw(1,4);sw(2,5);sw(4,7);sw(4,2);sw(6,4);sw(4,2);
+  return a[4];
+}
+const M9 = new Float32Array(9);
+function medianImg(img) {
+  const o = new Float32Array(img.length);
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) for (let k = 0; k < 3; k++) {
+    let n = 0;
+    for (let dy = -1; dy <= 1; dy++) { const yy = y + dy < 0 ? 0 : y + dy >= H ? H - 1 : y + dy;
+      for (let dx = -1; dx <= 1; dx++) { const xx = x + dx < 0 ? 0 : x + dx >= W ? W - 1 : x + dx; M9[n++] = img[(yy * W + xx) * 3 + k]; } }
+    o[(y * W + x) * 3 + k] = med9(M9);
+  }
+  return o;
+}
+function median5(m) {
+  const I = new Int32Array((W + 1) * (H + 1));
+  for (let y = 0; y < H; y++) { let rs = 0; for (let x = 0; x < W; x++) { rs += m[y * W + x]; I[(y + 1) * (W + 1) + x + 1] = I[y * (W + 1) + x + 1] + rs; } }
+  const o = new Uint8Array(W * H);
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+    const x0 = Math.max(0, x - 2), x1 = Math.min(W, x + 3), y0 = Math.max(0, y - 2), y1 = Math.min(H, y + 3);
+    const s = I[y1 * (W + 1) + x1] - I[y0 * (W + 1) + x1] - I[y1 * (W + 1) + x0] + I[y0 * (W + 1) + x0];
+    o[y * W + x] = 2 * s > (x1 - x0) * (y1 - y0) ? 1 : 0;
+  }
+  return o;
+}
+const DISK = []; for (let dy = -2; dy <= 2; dy++) for (let dx = -2; dx <= 2; dx++) if (dx * dx + dy * dy <= 5) DISK.push([dx, dy]);
+function morph(m, erode) {
+  const o = new Uint8Array(W * H);
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+    let r = erode ? 1 : 0;
+    for (const [dx, dy] of DISK) {
+      const xx = x + dx, yy = y + dy;
+      if (xx < 0 || yy < 0 || xx >= W || yy >= H) continue;
+      const v = m[yy * W + xx];
+      if (erode && !v) { r = 0; break; }
+      if (!erode && v) { r = 1; break; }
+    }
+    o[y * W + x] = r;
+  }
+  return o;
+}
+const openM = m => morph(morph(m, true), false);
+const closeM = m => morph(morph(m, false), true);
+function edges(m) {
+  const e = new Uint8Array(W * H);
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+    const p = y * W + x; if (!m[p]) continue;
+    if (x === 0 || y === 0 || x === W - 1 || y === H - 1) continue;
+    if (!m[p - 1] || !m[p + 1] || !m[p - W] || !m[p + W]) e[p] = 1;
+  }
+  return e;
+}
+const NT = 180, RMAX = Math.ceil(Math.hypot(W, H)), NR = 2 * RMAX + 1;
+const CS = new Float32Array(NT), SN = new Float32Array(NT);
+for (let t = 0; t < NT; t++) { CS[t] = Math.cos((t - 90) * D2R); SN[t] = Math.sin((t - 90) * D2R); }
+function hough(e) {
+  const acc = new Int32Array(NT * NR); let n = 0;
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) if (e[y * W + x]) {
+    n++; for (let t = 0; t < NT; t++) acc[t * NR + Math.round(x * CS[t] + y * SN[t]) + RMAX]++;
+  }
+  if (n < 20) return null;
+  const pk = []; let first = 0;
+  for (let k = 0; k < 6; k++) {
+    let bi = 0, bv = 0; for (let i = 0; i < acc.length; i++) if (acc[i] > bv) { bv = acc[i]; bi = i; }
+    if (k === 0) first = bv; if (bv < 0.3 * first || bv < 8) break;
+    const t = Math.floor(bi / NR), r = bi % NR; pk.push([t - 90, r - RMAX]);
+    for (let dt = -5; dt <= 5; dt++) for (let dr = -5; dr <= 5; dr++) {
+      const tt = t + dt, rr = r + dr; if (tt >= 0 && tt < NT && rr >= 0 && rr < NR) acc[tt * NR + rr] = 0;
+    }
+  }
+  if (!pk.length) return null;
+  const t0 = pk[0][0]; let ts = [], rs = [];
+  for (let [t, r] of pk) {
+    if (t - t0 > 90) { t -= 180; r = -r; } else if (t0 - t > 90) { t += 180; r = -r; }
+    if (Math.abs(t - t0) < 5) { ts.push(t); rs.push(r); }
+  }
+  let th = ts.reduce((a, b) => a + b, 0) / ts.length, rho = (Math.min(...rs) + Math.max(...rs)) / 2;
+  if (th >= 90) { th -= 180; rho = -rho; } if (th < -90) { th += 180; rho = -rho; }
+  return { th, rho, d: rho - (XC * Math.cos(th * D2R) + YC * Math.sin(th * D2R)) };
+}
+function pipeline(img, colName, thr, useMed, useMorph) {
+  const raw = threshold(img, colName, thr);
+  let m = useMed ? threshold(medianImg(img), colName, thr) : raw;
+  if (useMorph) m = openM(closeM(m));
+  const e = edges(m);
+  return { raw, mask: m, edge: e, est: hough(e) };
+}
+
+// ---------- drawing ----------
+const off = document.createElement('canvas'); off.width = W; off.height = H;
+const offx = off.getContext('2d');
+const offData = offx.createImageData(W, H);
+function blitRGB(cv, img) {
+  for (let p = 0; p < W * H; p++) { offData.data[p * 4] = img[p * 3] * 255; offData.data[p * 4 + 1] = img[p * 3 + 1] * 255; offData.data[p * 4 + 2] = img[p * 3 + 2] * 255; offData.data[p * 4 + 3] = 255; }
+  offx.putImageData(offData, 0, 0); const c = cv.getContext('2d'); c.imageSmoothingEnabled = false; c.drawImage(off, 0, 0, cv.width, cv.height); return c;
+}
+function blitMask(cv, m, rgb) {
+  for (let p = 0; p < W * H; p++) { const v = m[p]; offData.data[p * 4] = v ? rgb[0] : 12; offData.data[p * 4 + 1] = v ? rgb[1] : 14; offData.data[p * 4 + 2] = v ? rgb[2] : 22; offData.data[p * 4 + 3] = 255; }
+  offx.putImageData(offData, 0, 0); const c = cv.getContext('2d'); c.imageSmoothingEnabled = false; c.drawImage(off, 0, 0, cv.width, cv.height); return c;
+}
+function drawEst(c, est, color, dash) {
+  if (!est) return;
+  const k = c.canvas.width / W, th = est.th * D2R, cs = Math.cos(th), sn = Math.sin(th);
+  c.save(); c.strokeStyle = color; c.lineWidth = 3; c.setLineDash(dash ? [8, 6] : []); c.beginPath();
+  if (Math.abs(cs) > Math.abs(sn)) { c.moveTo(((est.rho) / cs + .5) * k, .5 * k); c.lineTo(((est.rho - (H - 1) * sn) / cs + .5) * k, (H - .5) * k); }
+  else { c.moveTo(.5 * k, (est.rho / sn + .5) * k); c.lineTo((W - .5) * k, ((est.rho - (W - 1) * cs) / sn + .5) * k); }
+  c.stroke(); c.restore();
+}
+
+// ---------- VISION TAB ----------
+const vChip = chips('vPipe');
+let vSrc = 'synth', vCol = 'red', vAuto = true, camStream = null, photoImg = null;
+const vid = $('vid'), grab = document.createElement('canvas'); grab.width = W; grab.height = H;
+const grabx = grab.getContext('2d', { willReadFrequently: true });
+const hist = { raw: [], dsp: [], okR: [], okF: [] };
+let steerF = 0, vT0 = performance.now();
+
+function setNoiseDefaults(cam) {
+  const set = (id, v) => { $(id).value = v; $(id).dispatchEvent(new Event('input')); };
+  if (cam) { set('vSig', 0.02); set('vSp', 0); set('vLight', 0); set('vBlur', 1); set('vThr', vCol === 'black' ? 0.3 : 0.35); }
+  else { set('vSig', 0.10); set('vSp', 8); set('vLight', 0.7); set('vBlur', 7); set('vThr', vCol === 'black' ? 0.3 : 0.45); }
+}
+document.querySelectorAll('[data-src]').forEach(b => b.onclick = async () => {
+  const s = b.dataset.src;
+  if (s === 'photo') { $('photoIn').click(); return; }
+  if (s === 'cam') {
+    try {
+      camStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment', width: { ideal: 640 }, height: { ideal: 480 } }, audio: false });
+      vid.srcObject = camStream; await vid.play();
+    } catch (e) { $('vMsg').textContent = 'Camera blocked here (' + e.name + '). Open the hosted https:// link in Chrome/Safari on your phone, or use Photo.'; return; }
+  } else if (camStream) { camStream.getTracks().forEach(t => t.stop()); camStream = null; }
+  selectSrc(s);
+});
+$('photoIn').onchange = e => {
+  const f = e.target.files[0]; if (!f) return;
+  const im = new Image(); im.onload = () => { photoImg = im; selectSrc('photo'); }; im.src = URL.createObjectURL(f);
+};
+function selectSrc(s) {
+  vSrc = s; $('vMsg').textContent = '';
+  document.querySelectorAll('[data-src]').forEach(x => x.classList.toggle('on', x.dataset.src === s));
+  $('synthCtl').style.display = s === 'synth' ? '' : 'none';
+  $('accBox').style.display = $('truthLeg').style.display = s === 'synth' ? '' : 'none';
+  setNoiseDefaults(s !== 'synth'); hist.raw = []; hist.dsp = []; hist.okR = []; hist.okF = [];
+}
+document.querySelectorAll('[data-col]').forEach(b => b.onclick = () => {
+  vCol = b.dataset.col; document.querySelectorAll('[data-col]').forEach(x => x.classList.toggle('on', x === b));
+  $('thrLbl').textContent = vCol === 'black' ? 'Darkness max (V)' : 'Saturation min';
+  $('vThr').value = vCol === 'black' ? 0.3 : (vSrc === 'synth' ? 0.45 : 0.35); $('vThr').dispatchEvent(new Event('input'));
+});
+$('autoTrack').onclick = () => { vAuto = !vAuto; $('autoTrack').classList.toggle('on', vAuto); };
+
+function grabImage(srcEl, sw, sh) {
+  const tr = W / H; let cw = sw, ch = sw / tr; if (ch > sh) { ch = sh; cw = sh * tr; }
+  grabx.drawImage(srcEl, (sw - cw) / 2, (sh - ch) / 2, cw, ch, 0, 0, W, H);
+  const d = grabx.getImageData(0, 0, W, H).data, img = new Float32Array(W * H * 3);
+  for (let p = 0; p < W * H; p++) { img[p * 3] = d[p * 4] / 255; img[p * 3 + 1] = d[p * 4 + 1] / 255; img[p * 3 + 2] = d[p * 4 + 2] / 255; }
+  return img;
+}
+function visionStep() {
+  let base, truth = null;
+  if (vSrc === 'synth') {
+    const t = (performance.now() - vT0) / 1000;
+    if (vAuto) {
+      $('vTh').value = Math.round(25 * Math.sin(0.35 * t)); $('vD').value = Math.round(22 * Math.sin(0.23 * t + 1));
+      $('vTh').dispatchEvent(new Event('input')); $('vD').dispatchEvent(new Event('input'));
+    }
+    truth = { th: val('vTh'), d: val('vD') };
+    truth.rho = XC * Math.cos(truth.th * D2R) + YC * Math.sin(truth.th * D2R) + truth.d;
+    base = synthFrame(truth.th, truth.d, COLORS[vCol]);
+  } else if (vSrc === 'cam') {
+    if (!vid.videoWidth) return; base = grabImage(vid, vid.videoWidth, vid.videoHeight);
+  } else {
+    if (!photoImg) return; base = grabImage(photoImg, photoImg.naturalWidth, photoImg.naturalHeight);
+  }
+  const img = addNoise(base, val('vSig'), val('vSp') / 100, val('vLight'), val('vBlur'));
+  const thr = val('vThr');
+  const t0 = performance.now();
+  const P = pipeline(img, vCol, thr, vChip.median, vChip.morph);
+  const ms = performance.now() - t0;
+  const R = pipeline(img, vCol, thr, false, false);
+
+  blitRGB($('c1'), img);
+  blitMask($('c2'), P.raw, [255, 210, 63]);
+  blitMask($('c3'), P.mask, [79, 140, 255]);
+  const c4 = blitMask($('c4'), P.edge, [255, 255, 255]);
+  if (truth) drawEst(c4, truth, 'rgba(255,255,255,.35)', true);
+  drawEst(c4, R.est, '#ffd23f', true);
+  drawEst(c4, P.est, '#2fbf71', false);
+
+  const push = (a, v, n) => { a.push(v); if (a.length > n) a.shift(); };
+  push(hist.raw, R.est ? R.est.th : NaN, 31); push(hist.dsp, P.est ? P.est.th : NaN, 31);
+  if (truth) {
+    const err = e => e ? Math.min(Math.abs(e.th - truth.th), 20) : 20;
+    push(hist.okR, err(R.est), 60); push(hist.okF, err(P.est), 60);
+    $('sAcc').innerHTML = `<span class="badc">${rms(hist.okR).toFixed(1)}°</span> → <span class="good">${rms(hist.okF).toFixed(1)}°</span>`;
+  }
+  if (P.est) {
+    $('sTh').textContent = P.est.th.toFixed(1) + '°' + (truth ? ` (true ${truth.th})` : '');
+    $('sD').textContent = P.est.d.toFixed(1) + ' px' + (truth ? ` (true ${truth.d})` : '');
+    const e = 0.03 * P.est.d * 0.5 + P.est.th * D2R;
+    steerF = vChip.lpf ? 0.7 * steerF + 0.3 * e : e;
+  } else { $('sTh').textContent = 'no line'; $('sD').textContent = '–'; }
+  const sb = $('steerBar'), u = Math.max(-1, Math.min(1, -1.2 * steerF));
+  sb.style.left = (u < 0 ? 50 + 50 * u : 50) + '%'; sb.style.width = Math.abs(50 * u) + '%';
+  const jit = a => { const d = []; for (let i = 1; i < a.length; i++) if (isFinite(a[i]) && isFinite(a[i - 1])) d.push(Math.abs(a[i] - a[i - 1])); return d.length ? d.reduce((x, y) => x + y, 0) / d.length : 0; };
+  $('sJit').innerHTML = `<span class="badc">${jit(hist.raw).toFixed(1)}°</span> → <span class="good">${jit(hist.dsp).toFixed(1)}°</span>`;
+  $('sMs').textContent = ms.toFixed(1) + ' ms/frame';
+}
+
+// ---------- IIR biquads ----------
+class Biquad {
+  constructor() { this.b = [1, 0, 0]; this.a = [0, 0]; this.x1 = this.x2 = this.y1 = this.y2 = 0; this.init = false; }
+  set(b0, b1, b2, a0, a1, a2) { this.b = [b0 / a0, b1 / a0, b2 / a0]; this.a = [a1 / a0, a2 / a0]; }
+  lowpass(fc, fs) { const w = 2 * Math.PI * Math.min(fc, fs * 0.45) / fs, c = Math.cos(w), al = Math.sin(w) / (2 * Math.SQRT1_2); this.set((1 - c) / 2, 1 - c, (1 - c) / 2, 1 + al, -2 * c, 1 - al); }
+  notch(f0, Q, fs) { const w = 2 * Math.PI * f0 / fs, c = Math.cos(w), al = Math.sin(w) / (2 * Q); this.set(1, -2 * c, 1, 1 + al, -2 * c, 1 - al); }
+  bypass() { this.b = [1, 0, 0]; this.a = [0, 0]; }
+  step(x) {
+    if (!this.init) { this.x1 = this.x2 = x; const g = (this.b[0] + this.b[1] + this.b[2]) / (1 + this.a[0] + this.a[1]); this.y1 = this.y2 = x * g; this.init = true; }
+    const y = this.b[0] * x + this.b[1] * this.x1 + this.b[2] * this.x2 - this.a[0] * this.y1 - this.a[1] * this.y2;
+    this.x2 = this.x1; this.x1 = x; this.y2 = this.y1; this.y1 = y; return y;
+  }
+}
+function fftMag(x) {
+  const n = x.length, re = new Float64Array(n), im = new Float64Array(n);
+  const mean = x.reduce((s, v) => s + v, 0) / n;
+  for (let i = 0; i < n; i++) re[i] = (x[i] - mean) * (0.5 - 0.5 * Math.cos(2 * Math.PI * i / (n - 1)));
+  for (let i = 1, j = 0; i < n; i++) { let bit = n >> 1; for (; j & bit; bit >>= 1) j ^= bit; j ^= bit; if (i < j) { [re[i], re[j]] = [re[j], re[i]]; [im[i], im[j]] = [im[j], im[i]]; } }
+  for (let len = 2; len <= n; len <<= 1) {
+    const a = -2 * Math.PI / len, wr = Math.cos(a), wi = Math.sin(a);
+    for (let i = 0; i < n; i += len) { let cr = 1, ci = 0;
+      for (let k = 0; k < len / 2; k++) {
+        const ur = re[i + k], ui = im[i + k], vr = re[i + k + len / 2] * cr - im[i + k + len / 2] * ci, vi = re[i + k + len / 2] * ci + im[i + k + len / 2] * cr;
+        re[i + k] = ur + vr; im[i + k] = ui + vi; re[i + k + len / 2] = ur - vr; im[i + k + len / 2] = ui - vi;
+        const t = cr * wr - ci * wi; ci = cr * wi + ci * wr; cr = t;
+      } }
+  }
+  const m = new Float64Array(n / 2); for (let i = 0; i < n / 2; i++) m[i] = Math.hypot(re[i], im[i]) * 2 / n; return m;
+}
+
+// ---------- IMU TAB ----------
+const iChip = chips('iPipe');
+const NF = 256, G = 9.81;
+const imu = {
+  live: false, running: false, fs: 100, lastT: 0, dts: [], t: 0, simTimer: null, auto: true,
+  notchA: [[new Biquad(), new Biquad(), new Biquad()], [new Biquad(), new Biquad(), new Biquad()]], lp: [new Biquad(), new Biquad(), new Biquad()],
+  peaks: [], gyroOnly: 0, comp: 0, kx: [0, 0], kP: [[1, 0], [0, 1]], gsign: 1,
+  magBuf: [], magFBuf: [], ser: { tru: [], raw: [], f: [], g: [], c: [], k: [] }, rawRoll: 0, fused: 0,
+  corr: [], lastPeakT: 0, simRoll: 0, rStart: 0,
+};
+const SER_N = 800;
+function imuReset() {
+  imu.gyroOnly = 0; imu.comp = 0; imu.kx = [0, 0]; imu.kP = [[1, 0], [0, 1]];
+  for (const k in imu.ser) imu.ser[k] = []; imu.magBuf = []; imu.magFBuf = []; imu.peaks = []; imu.t = 0; imu.rStart = 0;
+  imu.notchA.flat().forEach(b => { b.bypass(); b.init = false; }); imu.lp.forEach(b => b.init = false);
+}
+$('gyroReset').onclick = () => { imu.gyroOnly = imu.rawRoll; imu.rStart = imu.t; };
+$('autoRoll').onclick = () => { imu.auto = !imu.auto; $('autoRoll').classList.toggle('on', imu.auto); };
+
+function processSample(ax, ay, az, gyroDeg, dt, trueRoll) {
+  imu.t += dt;
+  imu.dts.push(dt); if (imu.dts.length > 100) imu.dts.shift();
+  const fs = 1 / (imu.dts.reduce((a, b) => a + b, 0) / imu.dts.length); imu.fs = fs;
+  const vA = val('iVibA'), vF = Math.min(val('iVibF'), 0.45 * fs), nz = val('iNz');
+  const vib = vA * Math.sin(2 * Math.PI * vF * imu.t);
+  ax += vib + nz * randn(); ay += 0.5 * vib + nz * randn(); az += 0.8 * vib + nz * randn();
+  const gyro = imu.gsign * gyroDeg + val('iBias');
+
+  const fc = val('iFc'), Q = val('iQ');
+  imu.lp.forEach(b => iChip.lpf ? b.lowpass(fc, fs) : b.bypass());
+  const comps = [ax, ay, az].map((v, i) => {
+    let y = v;
+    for (let k = 0; k < 2; k++) y = imu.notchA[k][i].step(y);
+    return imu.lp[i].step(y);
+  });
+  const rawRoll = Math.atan2(ax, Math.hypot(ay, az)) * R2D;
+  const fRoll = Math.atan2(comps[0], Math.hypot(comps[1], comps[2])) * R2D;
+  imu.rawRoll = rawRoll;
+
+  imu.gyroOnly += gyro * dt;
+  const al = val('iAlpha');
+  imu.comp = al * (imu.comp + gyro * dt) + (1 - al) * fRoll;
+  // Kalman: state [angle, bias]
+  let [a, b] = imu.kx, P = imu.kP; const q1 = 0.002, q2 = 0.0003, Rm = 3;
+  a = a + (gyro - b) * dt;
+  const P00 = P[0][0] + dt * (dt * P[1][1] - P[0][1] - P[1][0] + q1), P01 = P[0][1] - dt * P[1][1], P10 = P[1][0] - dt * P[1][1], P11 = P[1][1] + q2 * dt;
+  const S = P00 + Rm, K0 = P00 / S, K1 = P10 / S, yv = fRoll - a;
+  a += K0 * yv; b += K1 * yv;
+  imu.kP = [[P00 - K0 * P00, P01 - K0 * P01], [P10 - K1 * P00, P11 - K1 * P01]]; imu.kx = [a, b];
+  imu.fused = imu.comp;
+
+  const s = imu.ser, push = (k, v) => { s[k].push(v); if (s[k].length > SER_N) s[k].shift(); };
+  push('tru', trueRoll); push('raw', rawRoll); push('f', fRoll); push('g', imu.gyroOnly); push('c', imu.comp); push('k', a);
+  imu.magBuf.push(Math.hypot(ax, ay, az)); if (imu.magBuf.length > NF) imu.magBuf.shift();
+  imu.magFBuf.push(Math.hypot(...comps)); if (imu.magFBuf.length > NF) imu.magFBuf.shift();
+  // gyro sign check while moving
+  imu.corr.push([gyroDeg, fRoll]); if (imu.corr.length > 200) imu.corr.shift();
+  if (imu.live && imu.corr.length === 200 && imu.t - imu.lastSignT > 2) {
+    imu.lastSignT = imu.t;
+    const gs = imu.corr.map(c => c[0]); if (std(gs) > 15) {
+      let sc = 0; for (let i = 5; i < 200; i++) sc += gs[i] * (imu.corr[i][1] - imu.corr[i - 5][1]);
+      const ns = sc >= 0 ? 1 : -1; if (ns !== imu.gsign) { imu.gsign = ns; imu.comp = fRoll; imu.gyroOnly = fRoll; }
+    }
+  }
+  if (imu.t - imu.lastPeakT > 0.25 && imu.magBuf.length === NF) { imu.lastPeakT = imu.t; updateNotch(fs, Q); }
+}
+imu.lastSignT = 0;
+function updateNotch(fs, Q) {
+  const m = fftMag(imu.magBuf), df = fs / NF, sorted = [...m].sort((a, b) => a - b), med = sorted[m.length >> 1] + 1e-6;
+  const found = [], mm = Array.from(m);
+  const fmin = Math.max(2, val('iFc') + 1);
+  for (let k = 0; k < 2; k++) {
+    let bi = -1, bv = 0;
+    for (let i = 1; i < mm.length; i++) if (i * df > fmin && mm[i] > bv) { bv = mm[i]; bi = i; }
+    if (bi < 0 || bv < 8 * med || bv < 0.05) break;
+    let f = bi * df;
+    if (bi > 0 && bi < mm.length - 1) { const y0 = m[bi - 1], y1 = m[bi], y2 = m[bi + 1], den = y0 - 2 * y1 + y2; if (den) f = (bi + 0.5 * (y0 - y2) / den) * df; }
+    found.push(f);
+    for (let i = Math.max(0, bi - 3); i <= Math.min(mm.length - 1, bi + 3); i++) mm[i] = 0;
+  }
+  imu.peaks = found;
+  for (let k = 0; k < 2; k++) for (let i = 0; i < 3; i++) {
+    const bq = imu.notchA[k][i];
+    if (iChip.notch && found[k]) bq.notch(found[k], Q, fs); else bq.bypass();
+  }
+}
+function simTick() {
+  const dt = 0.01; let roll;
+  if (imu.auto) { const t = imu.t; roll = 15 * Math.sin(2 * Math.PI * 0.2 * t) + 8 * Math.sin(2 * Math.PI * 0.5 * t + 1); $('iTilt').value = Math.round(roll); $('iTilt').dispatchEvent(new Event('input')); }
+  else { imu.simRoll += (val('iTilt') - imu.simRoll) * 0.05; roll = imu.simRoll; }
+  const rate = (roll - (imu.prevRoll ?? roll)) / dt; imu.prevRoll = roll;
+  processSample(G * Math.sin(roll * D2R) + 0.15 * randn(), 0.15 * randn(), G * Math.cos(roll * D2R) + 0.15 * randn(), rate + 0.8 * randn(), dt, roll);
+}
+function startSim(reason) {
+  if (imu.simTimer) return;
+  imu.live = false; imuReset(); imu.dts = [];
+  imu.simTimer = setInterval(simTick, 10);
+  $('simCtl').style.display = ''; $('lgTrue').style.display = '';
+  $('iMsg').textContent = reason || '';
+}
+function onMotion(e) {
+  const a = e.accelerationIncludingGravity, r = e.rotationRate;
+  if (!a || a.x == null || !r || r.gamma == null) return;
+  const now = performance.now();
+  if (!imu.live) {
+    imu.live = true; if (imu.simTimer) { clearInterval(imu.simTimer); imu.simTimer = null; }
+    imuReset(); imu.dts = []; imu.lastT = now;
+    $('simCtl').style.display = 'none'; $('lgTrue').style.display = 'none'; $('iMsg').textContent = '';
+    return;
+  }
+  let dt = (now - imu.lastT) / 1000; imu.lastT = now;
+  if (!(dt > 0.001 && dt < 0.2)) return;
+  processSample(a.x, a.y, a.z, r.gamma, dt, NaN);
+}
+$('imuStart').onclick = async () => {
+  try {
+    if (typeof DeviceMotionEvent !== 'undefined' && typeof DeviceMotionEvent.requestPermission === 'function') {
+      const p = await DeviceMotionEvent.requestPermission(); if (p !== 'granted') throw new Error('permission ' + p);
+    }
+    window.addEventListener('devicemotion', onMotion);
+    $('imuStart').textContent = 'Sensors on';
+    setTimeout(() => { if (!imu.live) startSim('No motion sensor data here. Showing simulated IMU. On your phone, open the hosted https:// link and tap Start.'); }, 1500);
+  } catch (err) { startSim('Motion sensors blocked (' + err.message + '). Showing simulated IMU.'); }
+};
+
+function plotLines(cv, series, ymin, ymax, opts = {}) {
+  const d = sizeCanvas(cv), c = cv.getContext('2d'), w = cv.width, h = cv.height;
+  c.clearRect(0, 0, w, h);
+  c.strokeStyle = '#1f2940'; c.lineWidth = 1; c.fillStyle = '#6f7a96'; c.font = (10 * d) + 'px system-ui';
+  const ticks = opts.ticks || 4;
+  for (let i = 0; i <= ticks; i++) { const y = h - (i / ticks) * h; c.beginPath(); c.moveTo(0, y); c.lineTo(w, y); c.stroke(); const v = ymin + (ymax - ymin) * i / ticks; c.fillText((opts.fmt || (x => x.toFixed(0)))(v), 4 * d, Math.min(h - 3 * d, Math.max(11 * d, y - 3 * d))); }
+  for (const s of series) {
+    const a = s.data; if (!a || a.length < 2) continue;
+    const n = s.n || a.length;
+    c.strokeStyle = s.color; c.lineWidth = (s.w || 1.6) * d; c.setLineDash(s.dash ? [5 * d, 4 * d] : []); c.beginPath();
+    let started = false;
+    for (let i = 0; i < a.length; i++) {
+      if (!isFinite(a[i])) { started = false; continue; }
+      const x = (s.x ? s.x(i) : (i + n - a.length) / (n - 1)) * w, y = h - (Math.max(ymin, Math.min(ymax, a[i])) - ymin) / (ymax - ymin) * h;
+      if (!started) { c.moveTo(x, y); started = true; } else c.lineTo(x, y);
+    }
+    c.stroke();
+  }
+  c.setLineDash([]);
+  return c;
+}
+function imuDraw() {
+  const s = imu.ser;
+  plotLines($('pRoll'), [
+    { data: s.raw, color: 'rgba(255,107,107,.55)', w: 1, n: SER_N },
+    { data: s.tru, color: '#ffffff', w: 2.2, n: SER_N },
+    { data: s.f, color: '#4f8cff', n: SER_N },
+    { data: s.g, color: '#ffb020', n: SER_N },
+    { data: s.k, color: '#c77dff', dash: true, n: SER_N },
+    { data: s.c, color: '#2fbf71', w: 2, n: SER_N },
+  ], -50, 50, { fmt: v => v.toFixed(0) + '°' });
+  // attitude
+  const cv = $('pAtt'), d = sizeCanvas(cv), c = cv.getContext('2d'), w = cv.width, h = cv.height;
+  c.clearRect(0, 0, w, h);
+  c.strokeStyle = '#26304a'; c.lineWidth = 1; c.beginPath(); c.moveTo(0, h / 2); c.lineTo(w, h / 2); c.stroke();
+  const drone = (ang, col, alpha) => {
+    c.save(); c.globalAlpha = alpha; c.translate(w / 2, h / 2); c.rotate(-ang * D2R); const L = Math.min(w * 0.38, h * 0.9);
+    c.strokeStyle = col; c.lineWidth = 6 * d; c.lineCap = 'round'; c.beginPath(); c.moveTo(-L, 0); c.lineTo(L, 0); c.stroke();
+    c.fillStyle = col; c.fillRect(-14 * d, -9 * d, 28 * d, 18 * d);
+    for (const sx of [-1, 1]) { c.beginPath(); c.ellipse(sx * L, -8 * d, 26 * d, 5 * d, 0, 0, 2 * Math.PI); c.fill(); }
+    c.restore();
+  };
+  drone(imu.rawRoll, '#ff6b6b', 0.35); drone(imu.fused, '#2fbf71', 1);
+  c.fillStyle = '#e6ebf5'; c.font = (13 * d) + 'px system-ui'; c.fillText('roll ' + imu.fused.toFixed(1) + '°', 8 * d, 18 * d);
+  // spectrum
+  if (imu.magBuf.length === NF) {
+    const m1 = fftMag(imu.magBuf), m2 = fftMag(imu.magFBuf), fs = imu.fs, db = v => 20 * Math.log10(v + 1e-4);
+    const n = m1.length, xf = i => i / (n - 1);
+    const sc = plotLines($('pSpec'), [{ data: Array.from(m1, db), color: '#ff6b6b', x: xf }, { data: Array.from(m2, db), color: '#4f8cff', x: xf }], -60, 10, { fmt: v => v.toFixed(0) + ' dB' });
+    const ww = sc.canvas.width, hh = sc.canvas.height, dd = Math.min(window.devicePixelRatio || 1, 2);
+    sc.fillStyle = '#6f7a96'; sc.font = (10 * dd) + 'px system-ui';
+    for (let f = 0; f <= fs / 2; f += 10) sc.fillText(f + ' Hz', (f / (fs / 2)) * ww + 2, hh - 4 * dd);
+    sc.strokeStyle = '#ffd23f'; sc.setLineDash([4 * dd, 4 * dd]); sc.lineWidth = 1.5 * dd;
+    for (const p of imu.peaks) { const x = p / (fs / 2) * ww; sc.beginPath(); sc.moveTo(x, 0); sc.lineTo(x, hh); sc.stroke(); }
+    sc.setLineDash([]);
+  }
+  $('iFs').textContent = imu.fs.toFixed(0) + ' Hz';
+  $('iPeak').textContent = imu.peaks.length ? imu.peaks.map(p => p.toFixed(1)).join(', ') + ' Hz' : 'none';
+  const tail = a => a.slice(-150);
+  const hp = a => { const t = tail(a), o = []; for (let i = 1; i < t.length; i++) o.push(t[i] - t[i - 1]); return o; };
+  $('iNoise').innerHTML = `<span class="badc">${(std(hp(s.raw)) * Math.SQRT1_2).toFixed(2)}°</span> → <span class="good">${(std(hp(s.f)) * Math.SQRT1_2).toFixed(2)}°</span>`;
+  const drift = s.g.length ? s.g[s.g.length - 1] - s.c[s.c.length - 1] : 0;
+  $('iDrift').textContent = (drift >= 0 ? '+' : '') + drift.toFixed(1) + '°';
+}
+
+// ---------- ALTITUDE TAB ----------
+const aChip = chips('aPipe');
+const alt = { t: 0, tru: [], raw: [], out: [], win: [], ma: [], kx: [0, 0], kP: [[1, 0], [0, 1]], burst: 0 };
+const ALT_N = 500, AFS = 50;
+$('aBurst').onclick = () => alt.burst = 25;
+function altTrue(t) { const c = t % 20; if (c < 3) return 1.1 * c / 3; if (c < 15) return 1.1; if (c < 19) return 1.1 * (19 - c) / 4; return 0; }
+function altTick() {
+  const dt = 1 / AFS; alt.t += dt;
+  const h = altTrue(alt.t);
+  let z = h + val('aSig') / 100 * randn();
+  const spike = Math.random() < val('aSp') / 100 || (alt.burst > 0 && Math.random() < 0.5);
+  if (alt.burst > 0) alt.burst--;
+  if (spike) z += (Math.random() < 0.5 ? -1 : 1) * val('aSz') / 100 * (0.6 + 0.4 * Math.random());
+  let y = z;
+  alt.win.push(z); if (alt.win.length > 7) alt.win.shift();
+  if (aChip.median) { const s = [...alt.win].sort((a, b) => a - b); y = s[s.length >> 1]; }
+  alt.ma.push(y); if (alt.ma.length > 15) alt.ma.shift();
+  if (aChip.ma) y = alt.ma.reduce((a, b) => a + b, 0) / alt.ma.length;
+  if (aChip.kal) {
+    let [p, v] = alt.kx, P = alt.kP; const q1 = 1e-6, q2 = 2e-3, R = Math.max(1e-4, (val('aSig') / 100) ** 2);
+    p += v * dt;
+    let P00 = P[0][0] + dt * (P[1][0] + P[0][1]) + dt * dt * P[1][1] + q1, P01 = P[0][1] + dt * P[1][1], P10 = P[1][0] + dt * P[1][1], P11 = P[1][1] + q2;
+    const S = P00 + R, K0 = P00 / S, K1 = P10 / S, r = y - p; p += K0 * r; v += K1 * r;
+    alt.kP = [[P00 - K0 * P00, P01 - K0 * P01], [P10 - K1 * P00, P11 - K1 * P01]]; alt.kx = [p, v]; y = p;
+  } else alt.kx = [y, 0];
+  const push = (a, v) => { a.push(v); if (a.length > ALT_N) a.shift(); };
+  push(alt.tru, h); push(alt.raw, z); push(alt.out, y);
+}
+function altDraw() {
+  plotLines($('pAlt'), [
+    { data: alt.raw, color: 'rgba(255,107,107,.7)', w: 1, n: ALT_N },
+    { data: alt.tru, color: '#fff', w: 2.2, n: ALT_N },
+    { data: alt.out, color: '#2fbf71', w: 2, n: ALT_N },
+  ], -0.4, 1.6, { fmt: v => v.toFixed(1) + ' m' });
+  const er = alt.raw.map((v, i) => v - alt.tru[i]), eo = alt.out.map((v, i) => v - alt.tru[i]);
+  const sig = alt.tru.reduce((s, x) => s + x * x, 0);
+  const snr = e => 10 * Math.log10(sig / (e.reduce((s, x) => s + x * x, 0) + 1e-9));
+  $('aRmse').innerHTML = `<span class="badc">${(100 * rms(er)).toFixed(1)}</span> → <span class="good">${(100 * rms(eo)).toFixed(1)} cm</span>`;
+  $('aSnr').innerHTML = `<span class="badc">${snr(er).toFixed(1)}</span> → <span class="good">${snr(eo).toFixed(1)} dB</span>`;
+  const c = alt.t % 20; $('aPh').textContent = c < 3 ? 'take-off' : c < 15 ? 'hover' : c < 19 ? 'landing' : 'on ground';
+}
+
+// ---------- FLIGHT TAB ----------
+const fly = { started: false, fast: false };
+const S_PX = 0.5, TRK_W = 6, V = 25, FDT = 0.05;
+function flyReset() {
+  fly.started = true; fly.t = 0;
+  fly.d = [{ name: 'raw', filt: false }, { name: 'dsp', filt: true }].map(o => ({ ...o, x: 0, y: 5, psi: 0, ef: 0, pe: 0, prev: { th: 0, d: 0, rho: 0 }, path: [[0, 5]], err: [], w: [], lost: null }));
+}
+$('fGo').onclick = flyReset;
+$('fFast').onclick = () => { fly.fast = !fly.fast; $('fFast').classList.toggle('on', fly.fast); };
+const TRK0 = [[0, 0], [220, 0], [360, 70], [560, 70], [700, -50], [900, -50]];
+function trackPts() { const a = val('fA') / 40; return TRK0.map(([x, y]) => [x, y * a]); }
+function segDist(px, py, pts) {
+  let best = 1e9, sgn = 1;
+  for (let i = 0; i < pts.length - 1; i++) {
+    const [x1, y1] = pts[i], [x2, y2] = pts[i + 1], dx = x2 - x1, dy = y2 - y1, L2 = dx * dx + dy * dy;
+    let t = ((px - x1) * dx + (py - y1) * dy) / L2; t = Math.max(0, Math.min(1, t));
+    const ex = px - x1 - t * dx, ey = py - y1 - t * dy, dd = Math.hypot(ex, ey);
+    if (dd < best) { best = dd; sgn = (dx * ey - dy * ex) >= 0 ? 1 : -1; }
+  }
+  return [best, sgn];
+}
+function renderTrack(dr) {
+  const pts = trackPts(), cp = Math.cos(dr.psi), sp = Math.sin(dr.psi);
+  const base = paint((X, Y) => {
+    const fwd = (YC - Y) * S_PX, lft = (XC - X) * S_PX;
+    return segDist(dr.x + fwd * cp - lft * sp, dr.y + fwd * sp + lft * cp, pts)[0] < TRK_W;
+  }, COLORS.red);
+  return addNoise(base, val('fSig'), val('fSp') / 100, val('fLight'), 7);
+}
+function flyStep() {
+  if (!fly.started) return;
+  const pts = trackPts();
+  for (const dr of fly.d) {
+    if (dr.lost !== null || dr.x > 900) continue;
+    const img = renderTrack(dr);
+    const P = pipeline(img, 'red', 0.45, dr.filt, dr.filt);
+    let est = P.est || dr.prev; dr.prev = est;
+    const e = 0.03 * est.d * S_PX + est.th * D2R;
+    dr.ef = dr.filt ? 0.6 * dr.ef + 0.4 * e : e;
+    const de = (dr.ef - dr.pe) / FDT; dr.pe = dr.ef;
+    dr.psi += -(1.2 * dr.ef + 0.1 * de) * FDT;
+    dr.x += V * Math.cos(dr.psi) * FDT; dr.y += V * Math.sin(dr.psi) * FDT;
+    const [dd, sg] = segDist(dr.x, dr.y, pts), err = dd * sg;
+    dr.err.push(err); dr.path.push([dr.x, dr.y]); dr.w.push(-(1.2 * dr.ef + 0.1 * de));
+    if (Math.abs(err) > 40) dr.lost = fly.t;
+    const cv = $(dr.filt ? 'fF' : 'fR'); blitRGB(cv, img); drawEst(cv.getContext('2d'), P.est, dr.filt ? '#4f8cff' : '#ffd23f', false);
+  }
+  fly.t += FDT;
+}
+function flyDraw() {
+  if (!fly.started) return;
+  const cv = $('pFly'), d = sizeCanvas(cv), c = cv.getContext('2d'), w = cv.width, h = cv.height;
+  const sx = w / 900, sy = h / 200, Y = y => h / 2 - y * sy;
+  c.clearRect(0, 0, w, h);
+  c.strokeStyle = 'rgba(204,38,25,.85)'; c.lineWidth = Math.max(3, 2 * TRK_W * sy); c.lineJoin = 'round'; c.beginPath();
+  trackPts().forEach(([x, y], i) => i ? c.lineTo(x * sx, Y(y)) : c.moveTo(x * sx, Y(y))); c.stroke();
+  for (const dr of fly.d) {
+    c.strokeStyle = dr.filt ? '#4f8cff' : '#ffd23f'; c.lineWidth = 2 * d; c.beginPath();
+    dr.path.forEach(([x, y], i) => i ? c.lineTo(x * sx, Y(y)) : c.moveTo(x * sx, Y(y))); c.stroke();
+    const [x, y] = dr.path[dr.path.length - 1];
+    c.fillStyle = dr.lost !== null ? '#ff5a5f' : (dr.filt ? '#4f8cff' : '#ffd23f');
+    c.beginPath(); c.arc(x * sx, Y(y), 6 * d, 0, 2 * Math.PI); c.fill();
+    if (dr.lost !== null) { c.fillStyle = '#ff5a5f'; c.font = (12 * d) + 'px system-ui'; c.fillText('LOST TRACK', x * sx + 8 * d, Y(y) - 8 * d); }
+  }
+  const st = dr => dr.lost !== null ? `<span class="badc">lost at ${dr.lost.toFixed(1)} s</span>` : `<span class="good">on track</span> · ${rms(dr.err).toFixed(1)} cm`;
+  $('fsR').innerHTML = st(fly.d[0]); $('fsF').innerHTML = st(fly.d[1]);
+  const jerk = w => { const d = []; for (let i = 1; i < w.length; i++) d.push(w[i] - w[i - 1]); return rms(d); };
+  $('fJ').innerHTML = `<span class="badc">${jerk(fly.d[0].w).toFixed(2)}</span> → <span class="good">${jerk(fly.d[1].w).toFixed(2)}</span>`;
+  plotLines($('pSteer'), [{ data: fly.d[0].w.slice(-200), color: '#ffd23f', n: 200, w: 1.3 }, { data: fly.d[1].w.slice(-200), color: '#4f8cff', n: 200, w: 2 }], -1.5, 1.5, { ticks: 2, fmt: v => v.toFixed(1) });
+  $('fT').textContent = fly.t.toFixed(1) + ' s';
+}
+
+// ---------- main loop ----------
+function updBadge() {
+  if (tab === 'vision') vSrc === 'cam' ? setBadge('LIVE camera', 'live') : vSrc === 'photo' ? setBadge('Your photo', 'live') : setBadge('Synthetic track', 'sim');
+  else if (tab === 'imu') imu.live ? setBadge('LIVE phone sensors', 'live') : setBadge('SIMULATED sensors', 'sim');
+  else setBadge('Simulation', 'sim');
+}
+let lastV = 0, lastF = 0, altAcc = 0, lastA = performance.now();
+function loop(now) {
+  updBadge();
+  if (tab === 'vision' && now - lastV > 60) { lastV = now; visionStep(); }
+  const adt = Math.min(0.2, (now - lastA) / 1000); lastA = now; altAcc += adt;
+  while (altAcc > 1 / AFS) { altTick(); altAcc -= 1 / AFS; }
+  if (tab === 'alt') altDraw();
+  if (tab === 'imu') imuDraw();
+  if (tab === 'flight' && now - lastF > 50) { lastF = now; flyStep(); if (fly.fast) flyStep(); flyDraw(); }
+  requestAnimationFrame(loop);
+}
+selectSrc('synth');
+startSim('');
+$('iMsg').textContent = 'Simulated IMU running. Tap "Start phone sensors" to switch to the real accelerometer and gyroscope.';
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>
