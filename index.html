@@ -325,6 +325,7 @@ let RNG = Math.random;
 function rand() { return RNG(); }
 function setSeed(a) { RNG = function () { a |= 0; a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
 function clearSeed() { RNG = Math.random; }
+function randnM() { let u = 0, v = 0; while (!u) u = Math.random(); while (!v) v = Math.random(); return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v); }
 function randn() { let u = 0, v = 0; while (!u) u = rand(); while (!v) v = rand(); return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v); }
 const val = id => parseFloat($(id).value);
 function std(a) { if (a.length < 2) return 0; const m = a.reduce((s, x) => s + x, 0) / a.length; return Math.sqrt(a.reduce((s, x) => s + (x - m) ** 2, 0) / a.length); }
@@ -720,7 +721,7 @@ function processSample(ax, ay, az, gyroDeg, dt, trueRoll, gyroBeta = 0) {
   const fs = 1 / (imu.dts.reduce((a, b) => a + b, 0) / imu.dts.length); imu.fs = fs;
   const vA = val('iVibA'), vF = Math.min(val('iVibF'), 0.45 * fs), nz = val('iNz');
   const vib = vA * Math.sin(2 * Math.PI * vF * imu.t);
-  ax += vib + nz * randn(); ay += 0.5 * vib + nz * randn(); az += 0.8 * vib + nz * randn();
+  ax += vib + nz * randnM(); ay += 0.5 * vib + nz * randnM(); az += 0.8 * vib + nz * randnM();
   const gyro = imu.gsign * gyroDeg + val('iBias');
 
   const fc = val('iFc'), Q = val('iQ'), al0 = val('iAlpha');
@@ -799,39 +800,48 @@ function simTick() {
   const rate = (roll - (imu.prevRoll ?? roll)) / dt; imu.prevRoll = roll;
   const pitch = 10 * Math.sin(2 * Math.PI * 0.13 * imu.t), prate = (pitch - (imu.prevPitch ?? pitch)) / dt; imu.prevPitch = pitch;
   const cr = Math.cos(roll * D2R), cpch = Math.cos(pitch * D2R);
-  processSample(G * Math.sin(roll * D2R) * cpch + 0.15 * randn(), G * Math.sin(pitch * D2R) + 0.15 * randn(), G * cr * cpch + 0.15 * randn(), rate + 0.8 * randn(), dt, roll, prate + 0.8 * randn());
+  processSample(G * Math.sin(roll * D2R) * cpch + 0.15 * randnM(), G * Math.sin(pitch * D2R) + 0.15 * randnM(), G * cr * cpch + 0.15 * randnM(), rate + 0.8 * randnM(), dt, roll, prate + 0.8 * randnM());
 }
 function startSim(reason) {
+  if (reason !== undefined) $('iMsg').textContent = reason;
   if (imu.simTimer) return;
   imu.live = false; imuReset(); imu.dts = [];
   imu.simTimer = setInterval(simTick, 10);
   $('simCtl').style.display = ''; $('lgTrue').style.display = '';
-  $('iMsg').textContent = reason || '';
 }
 function onMotion(e) {
+  imu.evCount++;
   const a = e.accelerationIncludingGravity, r = e.rotationRate;
-  if (!a || a.x == null || !r || r.gamma == null) return;
+  if (!a || a.x == null || !r || r.gamma == null) { imu.evNull++; return; }
   const now = performance.now();
   if (!imu.live) {
     imu.live = true; if (imu.simTimer) { clearInterval(imu.simTimer); imu.simTimer = null; }
     imuReset(); imu.dts = []; imu.lastT = now;
-    $('simCtl').style.display = 'none'; $('lgTrue').style.display = 'none'; $('iMsg').textContent = '';
+    $('simCtl').style.display = 'none'; $('lgTrue').style.display = 'none'; $('iMsg').textContent = 'LIVE: real accelerometer + gyroscope.'; $('imuStart').textContent = 'Sensors on';
     return;
   }
   let dt = (now - imu.lastT) / 1000; imu.lastT = now;
   if (!(dt > 0.001 && dt < 0.2)) return;
   processSample(a.x, a.y, a.z, r.gamma, dt, NaN, r.beta || 0);
 }
+imu.evCount = 0; imu.evNull = 0;
 async function startMotion() {
-  if (imu.motionAsked) return; imu.motionAsked = true;
+  if (imu.live) return;
+  const diag = () => 'Diagnostics: secure page ' + (window.isSecureContext ? 'yes' : 'NO') + ', DeviceMotionEvent ' + (typeof DeviceMotionEvent !== 'undefined' ? 'yes' : 'NO') + ', events received ' + imu.evCount + ' (empty ' + imu.evNull + ').';
+  $('imuStart').textContent = 'Waiting for sensor…';
+  $('iMsg').textContent = 'Asking the phone for motion data…';
   try {
     if (typeof DeviceMotionEvent !== 'undefined' && typeof DeviceMotionEvent.requestPermission === 'function') {
-      const p = await DeviceMotionEvent.requestPermission(); if (p !== 'granted') throw new Error('permission ' + p);
+      let p = 'granted'; try { p = await DeviceMotionEvent.requestPermission(); } catch (e) { p = 'unknown'; } if (p === 'denied') throw new Error('denied');
     }
+    window.removeEventListener('devicemotion', onMotion);
     window.addEventListener('devicemotion', onMotion);
-    $('imuStart').textContent = 'Sensors on';
-    setTimeout(() => { if (!imu.live) startSim('No motion sensor data here. Showing simulated IMU. On your phone, open the hosted https:// link and tap Start.'); }, 1500);
-  } catch (err) { startSim('Motion sensors blocked (' + err.message + '). Showing simulated IMU.'); }
+    setTimeout(() => {
+      if (imu.live) { $('imuStart').textContent = 'Sensors on'; return; }
+      $('imuStart').textContent = 'Try again';
+      startSim('No motion data arrived, still showing SIMULATED IMU. ' + diag() + ' If you opened the link from WhatsApp/Gmail, open it in Chrome/Safari directly. Android Chrome: tap the lock icon → Permissions/Site settings → Motion sensors → Allow. iPhone: Settings → Safari → Motion & Orientation Access on.');
+    }, 2000);
+  } catch (err) { $('imuStart').textContent = 'Try again'; startSim('Motion permission refused (' + err.message + '). ' + diag()); }
 }
 $('imuStart').onclick = startMotion;
 
