@@ -77,7 +77,13 @@
   5. Flight tab: raw vs DSP steering plot.
   6. Results tab on the laptop: tables and verdicts.
 
-## Demo plan (Navigate)
+## Plan A (current direction, see PLAN_A.md)
+- Stick to the proposal: track following + landing marker, not map/navigation (Navigate tab stays as an extra, not the core).
+- P1: Simulink minidrone with `matlab/simulink/` blocks (dspVisionBlock, addCameraNoise, steeringLowpass). Untested in Simulink.
+- P2: ESP32 + MPU6050 + unbalanced DC motor, firmware `hardware/esp32_mpu6050/` at 500 Hz, internal DLPF off; IMU tab 'ESP32 + MPU6050 (USB)' via Web Serial 921600 baud, 'Record 20 s CSV'; analysis `matlab/esp32_mpu6050_analysis.m`. Phone IMU (60–100 Hz) aliases motor vibration, hence the rig.
+- P3: real red-tape track + blue landing pad; Camera tab pad detection (median + morph blue mask, 6-of-8-frame vote → LAND ✓, flicker counter).
+
+## Demo plan (Navigate, extra)
 - Arena: chart paper or newspaper about 1.5 × 1 m with START, GOAL and a book as the obstacle.
 - Steps: Calibrate 50 cm once → Set start (hold still 1 s) → follow the arrow and voice → go the wrong way on purpose (it re-plans) → reach the goal, tap 'I'm at the goal' to get the error → switch off Hann window or bias cal and repeat to show the raw drift.
 

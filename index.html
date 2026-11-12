@@ -90,7 +90,10 @@ table.tbl{width:100%;border-collapse:collapse;font-size:12px;margin-top:6px}
       <span class="chip">Edges</span><span class="arr">→</span>
       <span class="chip">Hough</span><span class="arr">→</span>
       <span class="chip t on" data-k="lpf">Low-pass</span><span class="arr">→</span>
-      <span class="chip">PID steer</span>
+      <span class="chip">PID steer</span><span class="arr">|</span>
+      <span class="chip">Blue pad mask</span><span class="arr">→</span>
+      <span class="chip t on" data-k="vote">Vote 6 of 8 frames</span><span class="arr">→</span>
+      <span class="chip">LAND</span>
     </div>
   </div>
   <div class="card">
@@ -126,6 +129,8 @@ table.tbl{width:100%;border-collapse:collapse;font-size:12px;margin-top:6px}
       <div class="stat"><i>θ jitter frame-to-frame</i><b id="sJit">–</b></div>
       <div class="stat" id="accBox"><i>Angle error vs truth (RMS)</i><b id="sAcc">–</b></div>
       <div class="stat"><i>Processing time</i><b id="sMs">–</b></div>
+      <div class="stat"><i>Landing pad (blue)</i><b id="sPad">–</b></div>
+      <div class="stat"><i>Pad flicker raw → voted</i><b id="sFlick">–</b></div>
     </div>
   </div>
   <div class="card">
@@ -138,7 +143,7 @@ table.tbl{width:100%;border-collapse:collapse;font-size:12px;margin-top:6px}
     <div class="sl"><label id="thrLbl">Saturation min</label><input type="range" id="vThr" min="0.1" max="0.9" step="0.01" value="0.45"><output></output></div>
     <div id="synthCtl">
       <h3 style="margin-top:12px">Synthetic track</h3>
-      <div class="row"><button class="btn on" id="autoTrack">Auto-move track</button></div>
+      <div class="row"><button class="btn on" id="autoTrack">Auto-move track</button><button class="btn" id="padBtn">Show landing pad</button></div>
       <div class="sl"><label>Track angle (°)</label><input type="range" id="vTh" min="-40" max="40" step="1" value="15"><output></output></div>
       <div class="sl"><label>Track offset (px)</label><input type="range" id="vD" min="-35" max="35" step="1" value="10"><output></output></div>
     </div>
@@ -160,6 +165,8 @@ table.tbl{width:100%;border-collapse:collapse;font-size:12px;margin-top:6px}
     </div>
     <div class="row" style="margin-top:10px">
       <button class="btn pri" id="imuStart">Start phone sensors</button>
+      <button class="btn" id="imuEsp">ESP32 + MPU6050 (USB)</button>
+      <button class="btn" id="imuRec">Record 20 s CSV</button>
       <button class="btn" id="gyroReset">Reset gyro</button>
       <button class="btn on" id="lpIIR">IIR low-pass</button>
       <button class="btn" id="lpFIR">FIR low-pass</button>
@@ -201,7 +208,7 @@ table.tbl{width:100%;border-collapse:collapse;font-size:12px;margin-top:6px}
   <div class="card">
     <h3>Inject noise</h3>
     <div class="sl"><label>Vibration (m/s²)</label><input type="range" id="iVibA" min="0" max="6" step="0.1" value="0"><output></output></div>
-    <div class="sl"><label>Vibration freq (Hz)</label><input type="range" id="iVibF" min="3" max="45" step="0.5" value="18"><output></output></div>
+    <div class="sl"><label>Vibration freq (Hz)</label><input type="range" id="iVibF" min="3" max="200" step="0.5" value="18"><output></output></div>
     <div class="sl"><label>Gyro bias (°/s)</label><input type="range" id="iBias" min="0" max="5" step="0.1" value="1.5"><output></output></div>
     <div class="sl"><label>Extra accel noise</label><input type="range" id="iNz" min="0" max="2" step="0.05" value="0"><output></output></div>
     <h3 style="margin-top:12px">Tune filters</h3>
@@ -714,6 +721,8 @@ function visionStep() {
     truth = { th: val('vTh'), d: val('vD') };
     truth.rho = XC * Math.cos(truth.th * D2R) + YC * Math.sin(truth.th * D2R) + truth.d;
     base = synthFrame(truth.th, truth.d, COLORS[vCol]);
+    if (PAD.show) { const c = Math.cos(truth.th * D2R), sn = Math.sin(truth.th * D2R), py = 28, px = (truth.rho - py * sn) / c;
+      for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) if ((x - px) ** 2 + (y - py) ** 2 < 196) { const i = (y * W + x) * 3; base[i] = 0.1; base[i + 1] = 0.25; base[i + 2] = 0.85; } }
   } else if (vSrc === 'cam') {
     if (!vid.videoWidth) return; base = grabImage(vid, vid.videoWidth, vid.videoHeight);
   } else {
@@ -733,6 +742,7 @@ function visionStep() {
   if (truth) drawEst(c4, truth, 'rgba(255,255,255,.35)', true);
   drawEst(c4, R.est, '#ffd23f', true);
   drawEst(c4, P.est, '#2fbf71', false);
+  padStep(img, c4);
 
   const push = (a, v, n) => { a.push(v); if (a.length > n) a.shift(); };
   push(hist.raw, R.est ? R.est.th : NaN, 31); push(hist.dsp, P.est ? P.est.th : NaN, 31);
@@ -752,6 +762,25 @@ function visionStep() {
   const jit = a => { const d = []; for (let i = 1; i < a.length; i++) if (isFinite(a[i]) && isFinite(a[i - 1])) d.push(Math.abs(a[i] - a[i - 1])); return d.length ? d.reduce((x, y) => x + y, 0) / d.length : 0; };
   $('sJit').innerHTML = `<span class="badc">${jit(hist.raw).toFixed(1)}°</span> → <span class="good">${jit(hist.dsp).toFixed(1)}°</span>`;
   $('sMs').textContent = ms.toFixed(1) + ' ms/frame';
+}
+
+// ---------- landing pad ----------
+const PAD = { show: false, hist: [], rawPrev: false, votePrev: false, flR: 0, flV: 0, n: 0 };
+$('padBtn').onclick = () => { PAD.show = !PAD.show; $('padBtn').classList.toggle('on', PAD.show); };
+function padDetect(img, filt) {
+  let m = threshold(filt ? medianImg(img) : img, 'blue', 0.45);
+  if (filt) m = openM(closeM(m));
+  let n = 0, sx = 0, sy = 0; for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) if (m[y * W + x]) { n++; sx += x; sy += y; }
+  return { found: n > 0.015 * W * H, frac: n / (W * H), cx: n ? sx / n : 0, cy: n ? sy / n : 0 };
+}
+function padStep(img, c4) {
+  const R = padDetect(img, false), F = padDetect(img, true);
+  PAD.hist.push(F.found ? 1 : 0); if (PAD.hist.length > 8) PAD.hist.shift();
+  const voted = vChip.vote ? PAD.hist.reduce((a, b) => a + b, 0) >= 6 : F.found;
+  PAD.n++; if (R.found !== PAD.rawPrev) PAD.flR++; if (voted !== PAD.votePrev) PAD.flV++; PAD.rawPrev = R.found; PAD.votePrev = voted;
+  if (F.found) { const k = c4.canvas.width / W; c4.strokeStyle = '#3fd0ff'; c4.lineWidth = 3; c4.beginPath(); c4.arc(F.cx * k, F.cy * k, 14 * k, 0, 2 * Math.PI); c4.stroke(); }
+  $('sPad').innerHTML = voted ? `<span class="good">LAND ✓</span> (${(F.cx - XC).toFixed(0)}, ${(F.cy - YC).toFixed(0)}) px off centre` : (F.found ? 'seen, confirming…' : 'searching');
+  $('sFlick').innerHTML = `<span class="badc">${PAD.flR}</span> → <span class="good">${PAD.flV}</span> changes`;
 }
 
 // ---------- IIR biquads ----------
@@ -872,7 +901,10 @@ function processSample(ax, ay, az, gyroDeg, dt, trueRoll, gyroBeta = 0) {
   imu.fused = imu.comp;
 
   const s = imu.ser, push = (k, v) => { s[k].push(v); if (s[k].length > SER_N) s[k].shift(); };
+  imu.dec = (imu.dec || 0) + 1; const every = Math.max(1, Math.round(fs / 100));
+  if (imu.dec % every === 0) {
   push('tru', trueRoll); push('raw', rawRoll); push('f', fRoll); push('g', imu.gyroOnly); push('c', imu.comp); push('k', a);
+  }
   imu.magBuf.push(Math.hypot(ax, ay, az)); if (imu.magBuf.length > NF) imu.magBuf.shift();
   imu.magFBuf.push(Math.hypot(...comps)); if (imu.magFBuf.length > NF) imu.magFBuf.shift();
   // gyro sign check while moving
@@ -1013,7 +1045,8 @@ function imuDraw() {
     const sc = plotLines($('pSpec'), [{ data: Array.from(m1, db), color: '#ff6b6b', x: xf }, { data: Array.from(m2, db), color: '#4f8cff', x: xf }], -60, 10, { fmt: v => v.toFixed(0) + ' dB' });
     const ww = sc.canvas.width, hh = sc.canvas.height, dd = Math.min(window.devicePixelRatio || 1, 2);
     sc.fillStyle = '#6f7a96'; sc.font = (10 * dd) + 'px system-ui';
-    for (let f = 0; f <= fs / 2; f += 10) sc.fillText(f + ' Hz', (f / (fs / 2)) * ww + 2, hh - 4 * dd);
+    const fstep = fs > 200 ? 50 : 10;
+    for (let f = 0; f <= fs / 2; f += fstep) sc.fillText(f + ' Hz', (f / (fs / 2)) * ww + 2, hh - 4 * dd);
     sc.strokeStyle = '#ffd23f'; sc.setLineDash([4 * dd, 4 * dd]); sc.lineWidth = 1.5 * dd;
     for (const p of imu.peaks) { const x = p / (fs / 2) * ww; sc.beginPath(); sc.moveTo(x, 0); sc.lineTo(x, hh); sc.stroke(); }
     sc.setLineDash([]);
@@ -1026,6 +1059,39 @@ function imuDraw() {
   $('iNoise').innerHTML = `<span class="badc">${(std(hp(s.raw)) * Math.SQRT1_2).toFixed(2)}°</span> → <span class="good">${(std(hp(s.f)) * Math.SQRT1_2).toFixed(2)}°</span>`;
   const drift = s.g.length ? s.g[s.g.length - 1] - s.c[s.c.length - 1] : 0;
   $('iDrift').textContent = (drift >= 0 ? '+' : '') + drift.toFixed(1) + '°';
+}
+
+// ---------- ESP32 + MPU6050 over USB (500 Hz) ----------
+const ESP = { on: false, lastT: 0, rec: null, recStart: 0, k: 0 };
+$('imuEsp').onclick = async () => {
+  try {
+    if (!navigator.serial) throw new Error('Web Serial needs Chrome or Edge on a laptop (GitHub Pages link).');
+    const port = await navigator.serial.requestPort(); await port.open({ baudRate: 921600 });
+    if (imu.simTimer) { clearInterval(imu.simTimer); imu.simTimer = null; }
+    window.removeEventListener('devicemotion', onMotion);
+    imu.live = true; imuReset(); imu.dts = []; ESP.on = true; ESP.lastT = 0;
+    $('simCtl').style.display = 'none'; $('lgTrue').style.display = 'none'; $('imuEsp').classList.add('on');
+    $('iMsg').textContent = 'LIVE: ESP32 + MPU6050 at up to 500 Hz. Tilt the board; switch the motor on to see its vibration peak.';
+    const reader = port.readable.pipeThrough(new TextDecoderStream()).getReader(); let buf = '';
+    while (true) { const { value, done } = await reader.read(); if (done) break; buf += value; const parts = buf.split('\n'); buf = parts.pop(); for (const l of parts) espLine(l); }
+  } catch (e) { $('iMsg').textContent = 'ESP32: ' + e.message; }
+};
+function espLine(l) {
+  const v = l.trim().split(',').map(Number); if (v.length < 7 || v.some(x => !isFinite(x))) return;
+  if (ESP.rec) { ESP.rec.push(l.trim()); if ((v[0] - ESP.recStart) / 1e6 > 20) recFinish(); }
+  if (!ESP.lastT) { ESP.lastT = v[0]; return; }
+  let dt = (v[0] - ESP.lastT) / 1e6; ESP.lastT = v[0]; if (!(dt > 0 && dt < 0.1)) return;
+  processSample(v[1], v[2], v[3], v[5], dt, NaN, v[4]);
+}
+$('imuRec').onclick = () => {
+  if (ESP.on) { ESP.rec = ['t_us,ax,ay,az,gx,gy,gz']; ESP.recStart = ESP.lastT; $('imuRec').classList.add('on'); $('imuRec').textContent = 'Recording…'; return; }
+  $('iMsg').textContent = 'Recording works with the ESP32 source. Connect it first.';
+};
+function recFinish() {
+  const txt = ESP.rec.join('\n') + '\n', n = ESP.rec.length - 1; ESP.rec = null;
+  $('imuRec').classList.remove('on'); $('imuRec').textContent = 'Record 20 s CSV';
+  try { const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([txt], { type: 'text/csv' })); a.download = 'mpu6050_log_' + Date.now() + '.csv'; document.body.appendChild(a); a.click(); a.remove(); $('iMsg').textContent = 'Saved ' + n + ' samples. Analyse it with matlab/esp32_mpu6050_analysis.m'; }
+  catch (e) { $('iMsg').textContent = 'Download blocked here: ' + e.message; }
 }
 
 // ---------- ALTITUDE TAB ----------

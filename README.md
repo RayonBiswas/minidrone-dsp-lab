@@ -18,6 +18,10 @@ Classical DSP (no AI/ML) for camera, IMU and altitude signals: DSP course projec
   - **Beacon (archived)**: the earlier ESP32 RSSI trilateration idea, kept as a simulation; firmware is in `archive/esp32/`. Open it from the Navigate tab.
   - **Results**: runs every comparison from the proposal with a fixed seed (E1 filter vs filter, E2 accuracy vs noise, E3 FIR vs IIR, notch and fusion, E4 altitude, E5 flight), then Copy tables or Download CSV
   - Falls back to simulated sensors when the real ones are unavailable.
+- `PLAN_A.md`: **the demo plan**. Three proofs matching proposal §4: Simulink minidrone, ESP32 + MPU6050 vibration rig, real track + landing pad.
+- `hardware/esp32_mpu6050/`: 500 Hz MPU6050 streaming firmware (IMU tab → ESP32 + MPU6050 (USB)).
+- `matlab/esp32_mpu6050_analysis.m`: FFT / notch / FIR vs IIR / fusion analysis of rig logs.
+- `matlab/simulink/`: MATLAB Function blocks and a guide for the parrotMinidroneCompetition model.
 - `matlab/minidrone_dsp_sim.m`: the full simulation in MATLAB (Image Processing and Signal Processing Toolboxes).
 - `matlab/phone_sensor_demo.m`: the same pipeline on real phone data via MATLAB Mobile (`mobiledev`).
 
