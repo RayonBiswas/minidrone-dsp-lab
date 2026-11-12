@@ -1,5 +1,5 @@
-// Drone ESP32: scans the 3 anchor beacons, reads their RSSI, and sends
-// "-62,-70,-58" lines to the phone over Bluetooth LE (Nordic UART service)
+// Drone ESP32: scans the anchor beacons (3 or 4), reads their RSSI, and sends
+// "-62,-70,-58[,-66]" lines to the phone over Bluetooth LE (Nordic UART service)
 // and to a laptop over USB serial (115200 baud). The web app's Beacon tab reads either.
 #include <WiFi.h>
 #include <BLEDevice.h>
@@ -8,12 +8,13 @@
 #include <BLE2902.h>
 
 #define WIFI_CHANNEL 1
+#define NUM_ANCHORS 3   // set 4 if you place A4 in the far corner (and tap '4th anchor' in the app)
 #define SVC_UUID "6E400001-B5A3-F393-E0A9-E50E24DCCA9E"
 #define TX_UUID  "6E400003-B5A3-F393-E0A9-E50E24DCCA9E"
 
 BLECharacteristic *tx;
 bool phoneConnected = false;
-int lastRssi[3] = {-100, -100, -100};
+int lastRssi[4] = {-100, -100, -100, -100};
 
 class ServerCB : public BLEServerCallbacks {
   void onConnect(BLEServer *s) { phoneConnected = true; }
@@ -44,13 +45,14 @@ void loop() {
     String id = WiFi.SSID(i);
     if (id.startsWith("DRONE-A")) {
       int k = id.substring(7).toInt() - 1;
-      if (k >= 0 && k < 3) lastRssi[k] = WiFi.RSSI(i);
+      if (k >= 0 && k < NUM_ANCHORS) lastRssi[k] = WiFi.RSSI(i);
     }
   }
   WiFi.scanDelete();
 
   char line[32];
-  snprintf(line, sizeof line, "%d,%d,%d\n", lastRssi[0], lastRssi[1], lastRssi[2]);
+  if (NUM_ANCHORS == 4) snprintf(line, sizeof line, "%d,%d,%d,%d\n", lastRssi[0], lastRssi[1], lastRssi[2], lastRssi[3]);
+  else snprintf(line, sizeof line, "%d,%d,%d\n", lastRssi[0], lastRssi[1], lastRssi[2]);
   Serial.printf("%lu,%s", millis(), line);           // laptop / logging: time_ms,A1,A2,A3
   if (phoneConnected) {                               // phone: A1,A2,A3 (short, fits one BLE packet)
     tx->setValue((uint8_t *)line, strlen(line));

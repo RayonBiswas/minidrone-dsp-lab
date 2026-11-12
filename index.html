@@ -325,7 +325,19 @@ table.tbl{width:100%;border-collapse:collapse;font-size:12px;margin-top:6px}
     </div>
     <div class="row" style="margin-top:10px">
       <button class="btn on" data-nsrc="sim">Simulate</button>
-      <button class="btn" data-nsrc="cam">Live phone</button>
+      <button class="btn" data-nsrc="cam">Live phone (camera)</button>
+      <button class="btn" data-nsrc="espsim">Simulate ESP32</button>
+      <button class="btn" data-nsrc="esp">ESP32 via Bluetooth</button>
+    </div>
+    <div class="row">
+      <button class="btn" id="nRoomTable">Table 1.5 × 1 m</button>
+      <button class="btn" id="nRoomRoom">Room 5 × 4 m</button>
+      <label class="hint" style="display:flex;align-items:center;gap:6px">W <input id="nW" type="number" min="1" max="20" step="0.5" value="1.5" style="width:56px"> m</label>
+      <label class="hint" style="display:flex;align-items:center;gap:6px">H <input id="nH" type="number" min="1" max="20" step="0.5" value="1" style="width:56px"> m</label>
+      <button class="btn" id="nRoomApply">Apply size</button>
+      <button class="btn" id="nObsMode">Edit obstacles</button>
+      <button class="btn" id="nObsClear">Clear obstacles</button>
+      <button class="btn" id="nA4">4th anchor (far corner)</button>
     </div>
     <div class="row">
       <button class="btn pri" id="nStart">Set start</button>
@@ -367,15 +379,15 @@ table.tbl{width:100%;border-collapse:collapse;font-size:12px;margin-top:6px}
     <div class="sl"><label>Camera noise σ</label><input type="range" id="nNoise" min="0" max="0.3" step="0.01" value="0.08"><output></output></div>
     <div class="sl"><label>Gyro bias (°/s)</label><input type="range" id="nBias" min="0" max="3" step="0.1" value="1.0"><output></output></div>
     <div class="sl"><label>Low-pass α</label><input type="range" id="nAlpha" min="0.1" max="1" step="0.05" value="0.5"><output></output></div>
-    <p class="hint"><button class="btn" id="nToBeacon">Archived: ESP32 beacon simulation</button></p>
+    <p class="hint"><button class="btn" id="nToBeacon">ESP32 filter switches + calibration</button></p>
   </div>
 </section>
 
 <!-- ================= BEACON (ESP32) ================= -->
 <section id="beacon">
   <div class="card">
-    <h3>ESP32 beacon navigation (archived)</h3>
-    <p class="hint" style="margin-top:0">Archived approach, kept for comparison. Firmware is in <code>archive/esp32/</code>. <button class="btn" id="bBack">← Back to Navigate</button></p>
+    <h3>ESP32 signal filters (used by Navigate)</h3>
+    <p class="hint" style="margin-top:0">These switches control the ESP32 chain in Navigate. Firmware is in <code>hardware/esp32_beacon/</code>. <button class="btn" id="bBack">← Back to Navigate</button></p>
     <div class="pipe" id="bPipe">
       <span class="chip">3 ESP32 anchors</span><span class="arr">→</span>
       <span class="chip">RSSI (dBm)</span><span class="arr">→</span>
@@ -383,6 +395,7 @@ table.tbl{width:100%;border-collapse:collapse;font-size:12px;margin-top:6px}
       <span class="chip t on" data-k="kal">Kalman (RSSI)</span><span class="arr">→</span>
       <span class="chip">Path-loss → distance</span><span class="arr">→</span>
       <span class="chip">Trilateration</span><span class="arr">→</span>
+      <span class="chip t on" data-k="wls">Weighted LS</span><span class="arr">→</span>
       <span class="chip t on" data-k="pkf">Kalman (position)</span><span class="arr">→</span>
       <span class="chip">Steer to goal</span>
     </div>
@@ -1511,6 +1524,22 @@ function trilat(d) {
   const cl = (v, m) => Math.max(-0.5, Math.min(m + 0.5, v));
   return [cl((a22 * b1 - a12 * b2) / det, BC.room[0]), cl((a11 * b2 - a12 * b1) / det, BC.room[1])];
 }
+function trilatW(d, p0) {
+  let p = p0 ? [...p0] : null; if (!p) return null;
+  for (let it = 0; it < 6; it++) {
+    let a11 = 0, a12 = 0, a22 = 0, b1 = 0, b2 = 0;
+    BC.anchors.forEach((a, i) => {
+      const dx = p[0] - a[0], dy = p[1] - a[1], r = Math.max(0.05, Math.hypot(dx, dy)), jx = dx / r, jy = dy / r, res = d[i] - r;
+      const w = 1 / (0.05 + (0.25 * d[i]) ** 2);
+      a11 += w * jx * jx; a12 += w * jx * jy; a22 += w * jy * jy; b1 += w * jx * res; b2 += w * jy * res;
+    });
+    const det = a11 * a22 - a12 * a12; if (Math.abs(det) < 1e-9) break;
+    const sx = (a22 * b1 - a12 * b2) / det, sy = (a11 * b2 - a12 * b1) / det;
+    p = [Math.max(-0.5, Math.min(BC.room[0] + 0.5, p[0] + sx)), Math.max(-0.5, Math.min(BC.room[1] + 0.5, p[1] + sy))];
+    if (Math.hypot(sx, sy) < 1e-3) break;
+  }
+  return p;
+}
 function processRSSI(pr, rssi, filt, dt) {
   const f = rssi.map((r, i) => {
     let y = r;
@@ -1520,6 +1549,7 @@ function processRSSI(pr, rssi, filt, dt) {
   });
   const d = f.map(rssiToDist);
   let p = trilat(d);
+  if (p && filt && bChip.wls) p = trilatW(d, p);
   if (p && filt && bChip.pkf) p = [kfCV(pr.kx, p[0], dt, 0.05, 0.25), kfCV(pr.ky, p[1], dt, 0.05, 0.25)];
   return { f, d, p };
 }
@@ -1556,8 +1586,8 @@ function bLiveSample(rssi) {
 }
 function parseLine(line) {
   const nums = (line.match(/-?\d+(\.\d+)?/g) || []).map(Number).filter(v => v < 0 && v > -120);
-  if (nums.length < 3) return null;
-  return nums.slice(-3);
+  const n = BC.anchors.length; if (nums.length < n) return null;
+  return nums.slice(-n);
 }
 function onLine(line) { const r = parseLine(line); if (r) bLiveSample(r); }
 function setBSrc(s, msg) {
@@ -1709,7 +1739,7 @@ function phaseCorr(A, B, keep) {
 }
 // arena (cm): x right, y up
 const AR = { w: 150, h: 100, start: [20, 20], goal: [130, 80], obs: [60, 25, 90, 75], grid: 5, inflate: 9 };
-function blocked(x, y) { const [x0, y0, x1, y1] = AR.obs, m = AR.inflate; return x > x0 - m && x < x1 + m && y > y0 - m && y < y1 + m; }
+function blocked(x, y) { const m = AR.inflate; return (AR.obsList || [AR.obs]).some(([x0, y0, x1, y1]) => x > x0 - m && x < x1 + m && y > y0 - m && y < y1 + m); }
 function segFree(a, b) { const n = Math.ceil(Math.hypot(b[0] - a[0], b[1] - a[1]) / 2); for (let i = 0; i <= n; i++) { const t = i / Math.max(1, n); if (blocked(a[0] + t * (b[0] - a[0]), a[1] + t * (b[1] - a[1]))) return false; } return true; }
 function astar(s, g) {
   const G = AR.grid, cw = Math.round(AR.w / G), ch = Math.round(AR.h / G), idx = (i, j) => j * cw + i;
@@ -1756,11 +1786,14 @@ const NV = { src: 'sim', k: 1 / PPCM, u: [0, 1], flip: 1, voice: true, lastSpoke
 try { const c = JSON.parse(localStorage.getItem('navCal') || 'null'); if (c && c.k > 0) { NV.k = c.k; NV.u = c.u; NV.flip = c.flip || 1; NV.camCal = true; } } catch (e) {}
 function newTrack(pos) { return { pos: [...pos], psi: 0, path: [[...pos]], prevSpec: null, hist: [], vel: [0, 0] }; }
 function navReset(keepCal) {
+  NV.nearN = 0; NV.dirCalls = 0; NV.route = null;
+  NV.pr = newProc(); NV.pf = newProc(); NV.gotEsp = false; NV.hold = { key: null, n: 0, shown: null };
   NV.raw = newTrack(AR.start); NV.flt = newTrack(AR.start);
   NV.truth = { pos: [...AR.start], psi: 0, path: [[...AR.start]] };
   NV.route = astar(AR.start, AR.goal); NV.dist = 0; NV.arrived = false; NV.t = 0; NV.calMode = false; NV.calSum = [0, 0];
   NV.biasSamples = []; NV.bias = 0; NV.biasDone = !nChip.bias; NV.psiComp0 = null; NV.lastRoute = 0; NV.err = null;
   NV.started = true; NV.q = 0; NV.ms = 0;
+  if (NV.src === 'esp') { NV.raw.path = []; NV.flt.path = []; }
 }
 // heading: integrate gyro (both tracks), filtered track removes bias and fuses compass
 function headingStep(rateDeg, dt, compassDeg) {
@@ -1792,10 +1825,12 @@ function trackStep(tr, gray, filt) {
 }
 function directions() {
   const p = NV.flt.pos, g = AR.goal, dG = Math.hypot(g[0] - p[0], g[1] - p[1]);
-  if (dG < 7) return { arrived: true, turn: 0, text: 'Arrived ✓', sub: 'within ' + dG.toFixed(0) + ' cm of the goal (estimate)', key: 'arrived' };
-  if (performance.now() - NV.lastRoute > 300) { NV.route = astar(p, g); NV.lastRoute = performance.now(); }
+  NV.nearN = dG < (isEsp() ? 50 : 7) ? (NV.nearN || 0) + 1 : 0;
+  if (NV.nearN >= (isEsp() ? 10 : 1)) return { arrived: true, turn: 0, text: 'Arrived ✓', sub: 'within ' + dG.toFixed(0) + ' cm of the goal (estimate)', key: 'arrived' };
+  NV.dirCalls = (NV.dirCalls || 0) + 1;
+  if (NV.dirCalls % 4 === 0 || !NV.route) NV.route = astar(p, g);
   const R = NV.route; let tgt = R[R.length - 1];
-  for (let i = 1; i < R.length; i++) if (Math.hypot(R[i][0] - p[0], R[i][1] - p[1]) > 12) { tgt = R[i]; break; }
+  const look = isEsp() ? 40 : 12; for (let i = 1; i < R.length; i++) if (Math.hypot(R[i][0] - p[0], R[i][1] - p[1]) > look) { tgt = R[i]; break; }
   const bearing = Math.atan2(-(tgt[0] - p[0]), tgt[1] - p[1]), turn = wrapA(bearing - NV.flt.psi), deg = turn * R2D;
   let left = 0; for (let i = 1; i < R.length; i++) left += Math.hypot(R[i][0] - R[i - 1][0], R[i][1] - R[i - 1][1]);
   if (Math.abs(deg) > 25) return { turn, text: (deg > 0 ? 'Turn left ' : 'Turn right ') + Math.abs(deg).toFixed(0) + '°', sub: left.toFixed(0) + ' cm to goal', key: deg > 0 ? 'left' : 'right' };
@@ -1833,7 +1868,7 @@ function camGray() {
   return g;
 }
 NV.live = { rate: 0, compass: null, lastT: 0 };
-window.addEventListener('devicemotion', e => { const r = e.rotationRate; if (!r || r.alpha == null) return; const now = performance.now(), dt = NV.live.lastT ? (now - NV.live.lastT) / 1000 : 0; NV.live.lastT = now; if (NV.src === 'cam' && dt > 0 && dt < 0.2) headingStep(r.alpha, dt, NV.live.compass); });
+window.addEventListener('devicemotion', e => { const r = e.rotationRate; if (!r || r.alpha == null) return; const now = performance.now(), dt = NV.live.lastT ? (now - NV.live.lastT) / 1000 : 0; NV.live.lastT = now; if ((NV.src === 'cam' || NV.src === 'esp') && dt > 0 && dt < 0.2) headingStep(r.alpha, dt, NV.live.compass); });
 window.addEventListener('deviceorientationabsolute', e => { if (e.alpha != null) NV.live.compass = e.alpha; });
 function liveStep() {
   if (!vid.videoWidth) return null;
@@ -1843,6 +1878,12 @@ function liveStep() {
 }
 document.querySelectorAll('[data-nsrc]').forEach(b => b.onclick = async () => {
   const s = b.dataset.nsrc;
+  if (s === 'esp') {
+    try { startMotion(); const nm = await espConnect(); $('nMsg').textContent = 'Connected to ' + nm + '. Heading comes from this phone\'s gyro and compass.'; }
+    catch (e) { $('nMsg').textContent = 'ESP32: ' + e.message; return; }
+  }
+  if ((s === 'esp' || s === 'espsim') && AR.w < 300) setRoom(5, 4);
+  if ((s === 'sim' || s === 'cam') && AR.w > 300) setRoom(1.5, 1);
   if (s === 'cam') {
     try {
       startMotion();
@@ -1851,6 +1892,7 @@ document.querySelectorAll('[data-nsrc]').forEach(b => b.onclick = async () => {
   }
   NV.src = s; document.querySelectorAll('[data-nsrc]').forEach(x => x.classList.toggle('on', x.dataset.nsrc === s));
   $('nMsg').textContent = '';
+  if (s === 'espsim' || s === 'esp') { $('nHint').textContent = s === 'espsim' ? 'Simulated ESP32 anchors in the room corners (A4 optional). A virtual person carries the phone and follows the directions. Position comes from noisy RSSI: red = raw trilateration, blue = median + Kalman chain, white = truth.' : 'Live: put ESP32 anchors A1, A2, A3 in the room corners shown on the map, carry the phone + drone ESP32, tap Set start and follow the arrow.'; NV.started = false; $('nInstr').textContent = 'Tap Set start'; $('nSub').textContent = 'room ' + (AR.w / 100) + ' × ' + (AR.h / 100) + ' m'; return; }
   $('nHint').textContent = s === 'sim' ? 'Simulation: a virtual phone flies over a textured floor and follows the app\'s directions. White = true path, blue = filtered estimate, red = raw estimate.'
     : 'Live: hold the phone flat, screen up, about 30 cm above a textured surface (newspaper, tiles, wood). Top edge = forward. ' + (NV.camCal ? 'Calibration loaded.' : 'Do "Calibrate 50 cm" once first.') + ' Then put the phone on START facing up the map and tap Set start.';
   NV.started = false; $('nInstr').textContent = 'Tap Set start'; $('nSub').textContent = s === 'sim' ? 'the virtual phone will fly to the goal' : 'hold still for 1 s after tapping';
@@ -1886,26 +1928,29 @@ $('bBack').onclick = () => showTab('nav');
 $('nMap').addEventListener('pointerdown', ev => {
   const cv = $('nMap'), r = cv.getBoundingClientRect(), g = nGeom(cv);
   const x = ((ev.clientX - r.left) * g.d - g.ox) / g.s, y = (g.oy - (ev.clientY - r.top) * g.d) / g.s;
+  if (NV.obsMode && x > 0 && x < AR.w && y > 0 && y < AR.h) { obsTap(x, y); return; }
   if (x > 3 && x < AR.w - 3 && y > 3 && y < AR.h - 3 && !blocked(x, y)) { AR.goal = [x, y]; if (NV.started) { NV.route = astar(NV.flt.pos, AR.goal); NV.arrived = false; NV.err = null; } }
 });
 function nGeom(cv) { const d = Math.min(window.devicePixelRatio || 1, 2), w = cv.width, h = cv.height, pad = 14 * d, s = Math.min((w - 2 * pad) / AR.w, (h - 2 * pad) / AR.h); return { d, s, ox: (w - s * AR.w) / 2, oy: h - (h - s * AR.h) / 2 }; }
 function navDraw(dirs, fresh) {
   const cv = $('nMap'); sizeCanvas(cv); const c = cv.getContext('2d'), g = nGeom(cv), d = g.d, X = x => g.ox + x * g.s, Y = y => g.oy - y * g.s;
   c.clearRect(0, 0, cv.width, cv.height);
-  c.strokeStyle = '#1a2236'; c.lineWidth = 1; for (let x = 0; x <= AR.w; x += 10) { c.beginPath(); c.moveTo(X(x), Y(0)); c.lineTo(X(x), Y(AR.h)); c.stroke(); } for (let y = 0; y <= AR.h; y += 10) { c.beginPath(); c.moveTo(X(0), Y(y)); c.lineTo(X(AR.w), Y(y)); c.stroke(); }
+  const gs = AR.w > 300 ? 50 : 10; c.strokeStyle = '#1a2236'; c.lineWidth = 1; for (let x = 0; x <= AR.w; x += gs) { c.beginPath(); c.moveTo(X(x), Y(0)); c.lineTo(X(x), Y(AR.h)); c.stroke(); } for (let y = 0; y <= AR.h; y += gs) { c.beginPath(); c.moveTo(X(0), Y(y)); c.lineTo(X(AR.w), Y(y)); c.stroke(); }
   c.strokeStyle = '#46557a'; c.lineWidth = 2 * d; c.strokeRect(X(0), Y(AR.h), AR.w * g.s, AR.h * g.s);
-  const [o0, o1, o2, o3] = AR.obs; c.fillStyle = '#3a4560'; c.fillRect(X(o0), Y(o3), (o2 - o0) * g.s, (o3 - o1) * g.s); c.fillStyle = '#8a96b3'; c.font = (10 * d) + 'px system-ui'; c.fillText('obstacle', X(o0) + 4 * d, Y((o1 + o3) / 2));
-  c.fillText('10 cm grid', X(0) + 4 * d, Y(0) - 4 * d);
+  c.font = (10 * d) + 'px system-ui';
+  for (const [o0, o1, o2, o3] of AR.obsList) { c.fillStyle = '#3a4560'; c.fillRect(X(o0), Y(o3), (o2 - o0) * g.s, (o3 - o1) * g.s); }
+  c.fillStyle = '#8a96b3'; c.fillText(gs + ' cm grid' + (NV.obsMode ? ' · tap to add/remove obstacles' : ''), X(0) + 4 * d, Y(0) - 4 * d);
+  if (isEsp()) BC.anchors.forEach((a, i) => { const ax = X(a[0] * 100), ay = Y(a[1] * 100); c.fillStyle = '#2fbf71'; c.beginPath(); c.moveTo(ax, ay - 9 * d); c.lineTo(ax - 8 * d, ay + 6 * d); c.lineTo(ax + 8 * d, ay + 6 * d); c.fill(); c.fillText('A' + (i + 1), ax + 9 * d, ay + (a[1] > 0 ? 14 : -8) * d); });
   c.fillStyle = '#2fbf71'; c.beginPath(); c.arc(X(AR.start[0]), Y(AR.start[1]), 6 * d, 0, 2 * Math.PI); c.fill(); c.fillText('START', X(AR.start[0]) + 8 * d, Y(AR.start[1]) + 4 * d);
   c.fillStyle = '#ffd23f'; c.beginPath(); c.arc(X(AR.goal[0]), Y(AR.goal[1]), 7 * d, 0, 2 * Math.PI); c.fill(); c.fillText('GOAL', X(AR.goal[0]) - 32 * d, Y(AR.goal[1]) - 10 * d);
   const line = (arr, col, w, dash) => { if (!arr || arr.length < 2) return; c.strokeStyle = col; c.lineWidth = w * d; c.setLineDash(dash ? [6 * d, 5 * d] : []); c.beginPath(); arr.forEach((p, i) => i ? c.lineTo(X(p[0]), Y(p[1])) : c.moveTo(X(p[0]), Y(p[1]))); c.stroke(); c.setLineDash([]); };
   if (NV.started) {
     line(NV.route && [NV.flt.pos, ...NV.route.slice(1)], '#ffd23f', 2, true);
     line(NV.raw.path, 'rgba(255,107,107,.85)', 1.8);
-    if (NV.src === 'sim') line(NV.truth.path, '#ffffff', 2.4);
+    if (NV.src === 'sim' || NV.src === 'espsim') line(NV.truth.path, '#ffffff', 2.4);
     line(NV.flt.path, '#4f8cff', 2.4);
     const tri = (p, psi, col) => { c.save(); c.translate(X(p[0]), Y(p[1])); c.rotate(-psi); c.fillStyle = col; c.beginPath(); c.moveTo(0, -11 * d); c.lineTo(-7 * d, 7 * d); c.lineTo(7 * d, 7 * d); c.closePath(); c.fill(); c.restore(); };
-    tri(NV.raw.pos, NV.raw.psi, 'rgba(255,107,107,.9)'); if (NV.src === 'sim') tri(NV.truth.pos, NV.truth.psi, '#ffffff'); tri(NV.flt.pos, NV.flt.psi, '#4f8cff');
+    tri(NV.raw.pos, NV.raw.psi, 'rgba(255,107,107,.9)'); if (NV.src === 'sim' || NV.src === 'espsim') tri(NV.truth.pos, NV.truth.psi, '#ffffff'); tri(NV.flt.pos, NV.flt.psi, '#4f8cff');
   }
   // arrow
   const ac = $('nArrow'), ax = ac.getContext('2d'); ax.clearRect(0, 0, 220, 220);
@@ -1930,26 +1975,97 @@ function navDraw(dirs, fresh) {
   }
   if (NV.started) {
     $('nPos').textContent = NV.flt.pos.map(v => v.toFixed(0)).join(', ') + ' cm'; $('nHead').textContent = (NV.flt.psi * R2D).toFixed(0) + '°';
-    $('nQ').innerHTML = NV.q > 0.08 ? `<span class="good">good (${NV.q.toFixed(2)})</span>` : NV.q > 0.04 ? `ok (${NV.q.toFixed(2)})` : `<span class="badc">low (${NV.q.toFixed(2)})</span>`;
-    if (NV.src === 'sim') { const T = NV.truth.pos; $('nErr').innerHTML = `<span class="badc">${Math.hypot(NV.raw.pos[0] - T[0], NV.raw.pos[1] - T[1]).toFixed(0)} cm</span> → <span class="good">${Math.hypot(NV.flt.pos[0] - T[0], NV.flt.pos[1] - T[1]).toFixed(0)} cm</span>`; }
+    $('nQ').innerHTML = isEsp() ? (NV.lastRssi ? 'RSSI ' + NV.lastRssi.map(v => v.toFixed(0)).join(' / ') + ' dBm' : (NV.src === 'esp' ? 'waiting for ESP32…' : '–')) : NV.q > 0.08 ? `<span class="good">good (${NV.q.toFixed(2)})</span>` : NV.q > 0.04 ? `ok (${NV.q.toFixed(2)})` : `<span class="badc">low (${NV.q.toFixed(2)})</span>`;
+    if (NV.src === 'sim' || NV.src === 'espsim') { const T = NV.truth.pos; $('nErr').innerHTML = `<span class="badc">${Math.hypot(NV.raw.pos[0] - T[0], NV.raw.pos[1] - T[1]).toFixed(0)} cm</span> → <span class="good">${Math.hypot(NV.flt.pos[0] - T[0], NV.flt.pos[1] - T[1]).toFixed(0)} cm</span>`; }
     else $('nErr').innerHTML = NV.err ? `<span class="badc">${NV.err.raw.toFixed(0)}</span> → <span class="good">${NV.err.flt.toFixed(0)} cm</span>` : 'tap "I\'m at the goal"';
     $('nDist').textContent = NV.dist.toFixed(0) + ' cm'; $('nMs').textContent = NV.ms.toFixed(1) + ' ms/frame';
   }
 }
 $('nTrials').onclick = async () => {
-  if (NV.trialBusy) return; NV.trialBusy = true; const keepSrc = NV.src; NV.src = 'sim'; const rows = [];
+  if (NV.trialBusy) return; NV.trialBusy = true; const keepSrc = NV.src; const rows = [];
   for (let k = 0; k < 5; k++) {
     $('nTrialOut').textContent = 'Running trial ' + (k + 1) + ' of 5…'; await new Promise(r => setTimeout(r, 0));
-    navReset(); let n = 0; while (!NV.arrived && n < 900) { simStep(1 / 15); n++; if (n % 60 === 0) await new Promise(r => setTimeout(r, 0)); }
+    const esp = NV.src === 'espsim' || NV.src === 'esp'; NV.src = esp ? 'espsim' : 'sim'; navReset(); let n = 0; while (!NV.arrived && n < 1800) { esp ? espSimStep(1 / 15) : simStep(1 / 15); n++; if (n % 60 === 0) await new Promise(r => setTimeout(r, 0)); }
     const T = NV.truth.pos, eR = Math.hypot(NV.raw.pos[0] - T[0], NV.raw.pos[1] - T[1]), eF = Math.hypot(T[0] - AR.goal[0], T[1] - AR.goal[1]);
-    rows.push([k + 1, NV.arrived ? 'yes' : 'timeout', NV.dist, eF, eR, 100 * eF / Math.max(1, NV.dist)]);
+    let L = 0; const TP = NV.truth.path; for (let i = 1; i < TP.length; i++) L += Math.hypot(TP[i][0] - TP[i - 1][0], TP[i][1] - TP[i - 1][1]);
+    rows.push([k + 1, NV.arrived ? 'yes' : 'timeout', L, eF, eR, 100 * eF / Math.max(1, L)]);
   }
   NV.src = keepSrc; NV.trialBusy = false;
   const avg = i => rows.reduce((s, r) => s + r[i], 0) / rows.length;
-  $('nTrialOut').innerHTML = table('E6', 'E6 Optical-flow navigation (sim, 5 runs)', ['Run', 'Arrived', 'Path cm', 'Goal error cm (filtered)', 'Raw estimate error cm', 'Drift %'], [...rows, ['Mean', '', avg(2), avg(3), avg(4), avg(5)]], [0, 0, 0, 1, 1, 2], rows.length) +
-    `<div class="verdict">Following the filtered estimate, the phone ends ${avg(3).toFixed(1)} cm from the goal on average (${avg(5).toFixed(1)}% drift over ${avg(2).toFixed(0)} cm). The raw estimate (no window, no gating, no bias calibration, gyro-only heading) is ${avg(4).toFixed(0)} cm off at the same moment.</div>`;
+  const espT = keepSrc === 'esp' || keepSrc === 'espsim';
+  $('nTrialOut').innerHTML = table(espT ? 'E7' : 'E6', espT ? 'E7 ESP32 RSSI navigation (sim, 5 runs)' : 'E6 Optical-flow navigation (sim, 5 runs)', ['Run', 'Arrived', 'Path cm', 'Goal error cm (filtered)', 'Raw estimate error cm', 'Drift %'], [...rows, ['Mean', '', avg(2), avg(3), avg(4), avg(5)]], [0, 0, 0, 1, 1, 2], rows.length) +
+    `<div class="verdict">Following the filtered estimate, the phone ends ${avg(3).toFixed(1)} cm from the goal on average (${avg(5).toFixed(1)}% drift over ${avg(2).toFixed(0)} cm). The raw estimate (${espT ? 'plain trilateration on unfiltered RSSI' : 'no window, no gating, no bias calibration, gyro-only heading'}) is ${avg(4).toFixed(0)} cm off at the same moment.</div>`;
 };
 
+// ---------- Navigate: room size, obstacles, ESP32 position source ----------
+const isEsp = () => NV.src === 'esp' || NV.src === 'espsim';
+AR.obsList = [AR.obs.slice()];
+function setRoom(wm, hm) {
+  AR.w = Math.round(wm * 100); AR.h = Math.round(hm * 100);
+  AR.grid = Math.max(5, Math.round(Math.min(AR.w, AR.h) / 20 / 5) * 5); AR.inflate = Math.round(AR.grid * 1.6);
+  AR.start = [Math.round(AR.w * 0.12), Math.round(AR.h * 0.15)]; AR.goal = [Math.round(AR.w * 0.88), Math.round(AR.h * 0.82)];
+  AR.obsList = [[AR.w * 0.42, AR.h * 0.25, AR.w * 0.58, AR.h * 0.75].map(Math.round)];
+  BC.room = [wm, hm]; BC.anchors = NV.a4 ? [[0, 0], [wm, 0], [0, hm], [wm, hm]] : [[0, 0], [wm, 0], [0, hm]];
+  $('nW').value = wm; $('nH').value = hm; NV.started = false; NV.lastDirs = null;
+  $('nInstr').textContent = 'Tap Set start'; $('nSub').textContent = 'room ' + wm + ' × ' + hm + ' m, grid ' + AR.grid + ' cm';
+}
+NV.a4 = false;
+$('nA4').onclick = () => { NV.a4 = !NV.a4; $('nA4').classList.toggle('on', NV.a4); setRoom(AR.w / 100, AR.h / 100); };
+$('nRoomTable').onclick = () => setRoom(1.5, 1);
+$('nRoomRoom').onclick = () => setRoom(5, 4);
+$('nRoomApply').onclick = () => setRoom(Math.max(1, val('nW')), Math.max(1, val('nH')));
+NV.obsMode = false;
+$('nObsMode').onclick = () => { NV.obsMode = !NV.obsMode; $('nObsMode').classList.toggle('on', NV.obsMode); $('nObsMode').textContent = NV.obsMode ? 'Done editing' : 'Edit obstacles'; };
+$('nObsClear').onclick = () => { AR.obsList = []; if (NV.started) NV.route = astar(NV.flt.pos, AR.goal); };
+function obsTap(x, y) {
+  const i = AR.obsList.findIndex(([x0, y0, x1, y1]) => x > x0 && x < x1 && y > y0 && y < y1);
+  if (i >= 0) AR.obsList.splice(i, 1);
+  else { const h = AR.grid * 1.5; AR.obsList.push([x - h, y - h, x + h, y + h]); }
+  if (NV.started) NV.route = astar(NV.flt.pos, AR.goal);
+}
+// ESP32 positioning: same RSSI chain as the Beacon tab, raw and filtered in parallel
+function espPosition(rssi, dt) {
+  const a = processRSSI(NV.pr, rssi, false, dt), b = processRSSI(NV.pf, rssi, true, dt);
+  NV.lastRssi = rssi;
+  const upd = (tr, p) => { if (!p) return; tr.pos = [p[0] * 100, p[1] * 100]; const lp = tr.path[tr.path.length - 1]; if (!lp || Math.hypot(tr.pos[0] - lp[0], tr.pos[1] - lp[1]) > 2) { if (lp && tr === NV.flt) NV.dist += Math.hypot(tr.pos[0] - lp[0], tr.pos[1] - lp[1]); tr.path.push([...tr.pos]); if (tr.path.length > 600) tr.path.shift(); } };
+  upd(NV.raw, a.p); upd(NV.flt, b.p);
+}
+function espSimStep(dt) {
+  const T = NV.truth; let rate = 0, dirs = null;
+  if (NV.biasDone && !NV.arrived) {
+    dirs = directions();
+    if (dirs.arrived) { NV.arrived = true; NV.arrivedDirs = dirs; }
+    else { rate = Math.max(-90, Math.min(90, dirs.turn * R2D * 3)); T.psi = wrapA(T.psi + rate * D2R * dt); if (Math.abs(dirs.turn * R2D) < 30) { const v = 40 * dt; T.pos[0] = Math.max(0, Math.min(AR.w, T.pos[0] + v * -Math.sin(T.psi))); T.pos[1] = Math.max(0, Math.min(AR.h, T.pos[1] + v * Math.cos(T.psi))); T.path.push([...T.pos]); } }
+  }
+  if (NV.arrived && !dirs) dirs = NV.arrivedDirs;
+  const gyro = rate + val('nBias') + 0.6 * randnM(), compass = T.psi * R2D + 4 * randnM();
+  for (let i = 0; i < 5; i++) headingStep(gyro, dt / 5, compass);
+  const t0 = performance.now();
+  espPosition(simRSSI([T.pos[0] / 100, T.pos[1] / 100]).map(v => v.r), dt);
+  NV.ms = performance.now() - t0; NV.t += dt;
+  if (NV.arrived && !NV.err) NV.err = { raw: Math.hypot(NV.raw.pos[0] - T.pos[0], NV.raw.pos[1] - T.pos[1]), flt: Math.hypot(T.pos[0] - AR.goal[0], T.pos[1] - AR.goal[1]) };
+  return dirs;
+}
+NV.espBuf = '';
+async function espConnect() {
+  if (!navigator.bluetooth) throw new Error('Web Bluetooth not available here. Use Chrome on Android via the GitHub Pages link.');
+  const dev = await navigator.bluetooth.requestDevice({ filters: [{ namePrefix: 'DRONE' }], optionalServices: [NUS] });
+  const ch = await (await (await dev.gatt.connect()).getPrimaryService(NUS)).getCharacteristic(NUS_TX);
+  await ch.startNotifications(); let last = performance.now();
+  ch.addEventListener('characteristicvaluechanged', e => {
+    NV.espBuf += new TextDecoder().decode(e.target.value); const parts = NV.espBuf.split('\n'); NV.espBuf = parts.pop();
+    for (const l of parts) { const r = parseLine(l); if (!r || !NV.started) continue; const now = performance.now(); espPosition(r, Math.min(0.5, (now - last) / 1000)); last = now; NV.gotEsp = true; }
+  });
+  dev.addEventListener('gattserverdisconnected', () => { $('nMsg').textContent = 'ESP32 disconnected.'; });
+  return dev.name || 'ESP32';
+}
+
+function holdDirs(d) {
+  if (!d) return d; const H = NV.hold || (NV.hold = { key: null, n: 0, shown: null }), need = isEsp() ? 5 : 2;
+  if (d.key === H.key) H.n++; else { H.key = d.key; H.n = 1; }
+  if (d.arrived || !H.shown || H.n >= need) H.shown = d;
+  return H.shown.key === d.key ? d : { ...d, text: H.shown.text, key: H.shown.key };
+}
 // ---------- main loop ----------
 function updBadge() {
   if (tab === 'vision') vSrc === 'cam' ? setBadge('LIVE camera', 'live') : vSrc === 'photo' ? setBadge('Your photo', 'live') : setBadge('Synthetic track', 'sim');
@@ -1968,7 +2084,7 @@ function loop(now) {
   while (altAcc > 1 / AFS) { altTick(); altAcc -= 1 / AFS; }
   if (tab === 'alt') altDraw();
   if (tab === 'imu') imuDraw();
-  if (tab === 'nav') { let fresh = false; if (NV.started && now - lastN > 66 && !NV.trialBusy) { lastN = now; const dd = NV.src === 'sim' ? simStep(1 / 15) : liveStep(); NV.lastDirs = NV.biasDone ? dd : null; fresh = true; } navDraw(NV.started ? NV.lastDirs : null, fresh); }
+  if (tab === 'nav') { let fresh = false; if (NV.started && now - lastN > 66 && !NV.trialBusy) { lastN = now; const dd = NV.src === 'sim' ? simStep(1 / 15) : NV.src === 'espsim' ? espSimStep(1 / 15) : NV.src === 'esp' ? (NV.biasDone && NV.gotEsp ? directions() : null) : liveStep(); NV.lastDirs = NV.biasDone ? holdDirs(dd) : null; fresh = true; } navDraw(NV.started ? NV.lastDirs : null, fresh); }
   if (tab === 'beacon') { if (BC.src === 'sim' && now - lastB > 50) { lastB = now; bSimStep(); } bDraw(); }
   if (tab === 'drone' && now - lastD > 66) { lastD = now; droneStep(); }
   if (tab === 'flight' && now - lastF > 50) { lastF = now; flyStep(); if (fly.fast) flyStep(); flyDraw(); }

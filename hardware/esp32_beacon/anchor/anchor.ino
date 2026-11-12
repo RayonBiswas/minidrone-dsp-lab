@@ -1,8 +1,8 @@
 // ESP32 anchor: broadcasts a Wi-Fi beacon the drone ESP32 measures (RSSI).
-// Flash 3 boards, changing ANCHOR_ID to 1, 2, 3. Power each from any USB charger or power bank.
+// Flash 3 boards (or 4), changing ANCHOR_ID to 1, 2, 3 (, 4). Power each from any USB charger or power bank.
 #include <WiFi.h>
 
-#define ANCHOR_ID 1          // 1, 2 or 3
+#define ANCHOR_ID 1          // 1, 2, 3 or 4
 #define WIFI_CHANNEL 1       // all anchors on the same channel so the drone scans fast
 
 void setup() {

@@ -1,5 +1,7 @@
 # ESP32 beacon navigation
 
+Used by the app's **Navigate** tab (sources *Simulate ESP32* and *ESP32 via Bluetooth*): the phone gives heading (gyro + compass), the ESP32s give position, and the app plans and speaks the route.
+
 Three ESP32 **anchors** sit at known points in the room and broadcast Wi-Fi beacons. The ESP32 on the **drone** measures each anchor's signal strength (RSSI) several times a second and streams it to the phone app (Bluetooth LE) or the laptop (USB). The app's **Beacon** tab turns RSSI into distance, runs trilateration, filters the result and draws the drone's path from start to goal on a map.
 
 ```
@@ -27,6 +29,7 @@ Drone ESP32 ──BLE (Nordic UART)──▶ phone app (Chrome, GitHub Pages lin
 | A1 | (0, 0): one corner |
 | A2 | (5, 0): corner along the 5 m wall |
 | A3 | (0, 4): corner along the 4 m wall |
+| A4 (optional) | (5, 4): far corner, near the goal. Set `NUM_ANCHORS 4` in the receiver and tap *4th anchor* in the app |
 | Start | (0.6, 0.6) |
 | Goal | (4.4, 3.4), or tap the map to move it |
 
