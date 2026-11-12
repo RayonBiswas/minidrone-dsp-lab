@@ -73,7 +73,7 @@ table.tbl{width:100%;border-collapse:collapse;font-size:12px;margin-top:6px}
   <button data-tab="alt">Altitude</button>
   <button data-tab="flight">Flight</button>
   <button data-tab="drone">Drone</button>
-  <button data-tab="beacon">Beacon</button>
+  <button data-tab="nav" id="navTabBtn">Navigate</button>
   <button data-tab="results">Results</button>
 </nav>
 
@@ -300,10 +300,75 @@ table.tbl{width:100%;border-collapse:collapse;font-size:12px;margin-top:6px}
   </div>
 </section>
 
+<!-- ================= NAVIGATE (optical-flow localisation) ================= -->
+<section id="nav">
+  <div class="card">
+    <h3>Navigate: the phone finds its own position and gets directions</h3>
+    <div class="pipe" id="nPipe">
+      <span class="chip">Down camera</span><span class="arr">→</span>
+      <span class="chip t on" data-k="win">Hann window</span><span class="arr">→</span>
+      <span class="chip">2D FFT phase correlation</span><span class="arr">→</span>
+      <span class="chip t on" data-k="gate">Quality gate</span><span class="arr">→</span>
+      <span class="chip t on" data-k="med">Median flow</span><span class="arr">→</span>
+      <span class="chip t on" data-k="lpf">Low-pass</span><span class="arr">→</span>
+      <span class="chip">⊕ Gyro heading</span><span class="arr">→</span>
+      <span class="chip t on" data-k="bias">Gyro bias cal</span><span class="arr">→</span>
+      <span class="chip t on" data-k="comp">Compass fusion</span><span class="arr">→</span>
+      <span class="chip">Map + A* route</span>
+    </div>
+    <div class="row" style="margin-top:10px">
+      <button class="btn on" data-nsrc="sim">Simulate</button>
+      <button class="btn" data-nsrc="cam">Live phone</button>
+    </div>
+    <div class="row">
+      <button class="btn pri" id="nStart">Set start</button>
+      <button class="btn" id="nCal">Calibrate 50 cm</button>
+      <button class="btn" id="nGoal">I'm at the goal</button>
+      <button class="btn on" id="nVoice">Voice on</button>
+      <button class="btn" id="nFlip">Flip sideways</button>
+    </div>
+    <p class="hint" id="nHint">Simulation: a virtual phone flies over a textured floor and follows the app's directions. White = true path, blue = filtered estimate, red = raw estimate.</p>
+    <p class="msg" id="nMsg"></p>
+  </div>
+  <div class="card">
+    <div style="display:flex;gap:10px;align-items:center">
+      <canvas id="nArrow" width="220" height="220" style="width:110px;height:110px;background:#0b101a;border-radius:14px;flex:none"></canvas>
+      <div><div id="nInstr" style="font-size:22px;font-weight:700">Tap Set start</div><div class="hint" id="nSub">–</div></div>
+    </div>
+    <canvas class="plot" id="nMap" style="height:300px;margin-top:10px;touch-action:none"></canvas>
+    <div class="legend"><span><em style="background:#fff"></em>true path (sim)</span><span><em style="background:#4f8cff"></em>filtered estimate</span><span><em style="background:#ff6b6b"></em>raw estimate</span><span><em style="background:#ffd23f"></em>route to goal</span><span><em style="background:#8a96b3"></em>obstacle</span></div>
+  </div>
+  <div class="card">
+    <div class="grid2">
+      <div class="panel"><canvas id="nCam" width="256" height="256"></canvas><span>camera patch + flow</span></div>
+      <div class="panel"><canvas id="nCorr" width="256" height="256"></canvas><span>phase-correlation peak</span></div>
+    </div>
+    <div class="stats" style="margin-top:8px">
+      <div class="stat"><i>Position (filtered)</i><b id="nPos">–</b></div>
+      <div class="stat"><i>Heading</i><b id="nHead">–</b></div>
+      <div class="stat"><i>Texture quality</i><b id="nQ">–</b></div>
+      <div class="stat"><i>Error raw → filtered</i><b id="nErr">–</b></div>
+      <div class="stat"><i>Distance travelled</i><b id="nDist">–</b></div>
+      <div class="stat"><i>Processing</i><b id="nMs">–</b></div>
+    </div>
+  </div>
+  <div class="card">
+    <h3>Drift test (simulation, 5 runs)</h3>
+    <div class="row"><button class="btn" id="nTrials">Run 5 trials</button></div>
+    <div id="nTrialOut" class="hint">Each run flies start → goal around the obstacle. Error is the true distance from the goal when the app says "Arrived".</div>
+    <h3 style="margin-top:12px">Simulation settings</h3>
+    <div class="sl"><label>Camera noise σ</label><input type="range" id="nNoise" min="0" max="0.3" step="0.01" value="0.08"><output></output></div>
+    <div class="sl"><label>Gyro bias (°/s)</label><input type="range" id="nBias" min="0" max="3" step="0.1" value="1.0"><output></output></div>
+    <div class="sl"><label>Low-pass α</label><input type="range" id="nAlpha" min="0.1" max="1" step="0.05" value="0.5"><output></output></div>
+    <p class="hint"><button class="btn" id="nToBeacon">Archived: ESP32 beacon simulation</button></p>
+  </div>
+</section>
+
 <!-- ================= BEACON (ESP32) ================= -->
 <section id="beacon">
   <div class="card">
-    <h3>ESP32 beacon navigation pipeline</h3>
+    <h3>ESP32 beacon navigation (archived)</h3>
+    <p class="hint" style="margin-top:0">Archived approach, kept for comparison. Firmware is in <code>archive/esp32/</code>. <button class="btn" id="bBack">← Back to Navigate</button></p>
     <div class="pipe" id="bPipe">
       <span class="chip">3 ESP32 anchors</span><span class="arr">→</span>
       <span class="chip">RSSI (dBm)</span><span class="arr">→</span>
@@ -1538,16 +1603,298 @@ function bDraw() {
   } else if (BC.src !== 'sim') $('bFit').textContent = 'Calibration fit runs in Simulate mode. For real boards, log RSSI at known distances (0.5–5 m) and set P0 and n with the sliders.';
 }
 
+// ---------- NAVIGATE: optical-flow localisation + directions ----------
+const nChip = chips('nPipe');
+const NN = 128, NN2 = NN * NN;
+function fftIP(re, im, n, inv) {
+  for (let i = 1, j = 0; i < n; i++) { let bit = n >> 1; for (; j & bit; bit >>= 1) j ^= bit; j ^= bit; if (i < j) { let t = re[i]; re[i] = re[j]; re[j] = t; t = im[i]; im[i] = im[j]; im[j] = t; } }
+  for (let len = 2; len <= n; len <<= 1) {
+    const ang = (inv ? 2 : -2) * Math.PI / len, wr = Math.cos(ang), wi = Math.sin(ang), h = len >> 1;
+    for (let i = 0; i < n; i += len) { let cr = 1, ci = 0;
+      for (let k = 0; k < h; k++) { const a = i + k, b = a + h, vr = re[b] * cr - im[b] * ci, vi = re[b] * ci + im[b] * cr;
+        re[b] = re[a] - vr; im[b] = im[a] - vi; re[a] += vr; im[a] += vi; const t = cr * wr - ci * wi; ci = cr * wi + ci * wr; cr = t; } }
+  }
+}
+const TR = new Float64Array(NN), TI = new Float64Array(NN);
+function fft2(re, im, inv) {
+  for (let y = 0; y < NN; y++) { const o = y * NN; for (let x = 0; x < NN; x++) { TR[x] = re[o + x]; TI[x] = im[o + x]; } fftIP(TR, TI, NN, inv); for (let x = 0; x < NN; x++) { re[o + x] = TR[x]; im[o + x] = TI[x]; } }
+  for (let x = 0; x < NN; x++) { for (let y = 0; y < NN; y++) { TR[y] = re[y * NN + x]; TI[y] = im[y * NN + x]; } fftIP(TR, TI, NN, inv); for (let y = 0; y < NN; y++) { re[y * NN + x] = TR[y]; im[y * NN + x] = TI[y]; } }
+}
+const HANN2 = new Float64Array(NN2);
+for (let y = 0; y < NN; y++) for (let x = 0; x < NN; x++) HANN2[y * NN + x] = (0.5 - 0.5 * Math.cos(2 * Math.PI * x / (NN - 1))) * (0.5 - 0.5 * Math.cos(2 * Math.PI * y / (NN - 1)));
+function spec(gray, win) {
+  const re = new Float64Array(NN2), im = new Float64Array(NN2); let m = 0;
+  for (let i = 0; i < NN2; i++) m += gray[i]; m /= NN2;
+  for (let i = 0; i < NN2; i++) re[i] = (gray[i] - m) * (win ? HANN2[i] : 1);
+  fft2(re, im, false); return { re, im };
+}
+let lastCorr = null;
+function phaseCorr(A, B, keep) {
+  const re = new Float64Array(NN2), im = new Float64Array(NN2);
+  for (let i = 0; i < NN2; i++) { const xr = B.re[i] * A.re[i] + B.im[i] * A.im[i], xi = B.im[i] * A.re[i] - B.re[i] * A.im[i], mg = Math.hypot(xr, xi) + 1e-9; re[i] = xr / mg; im[i] = xi / mg; }
+  fft2(re, im, true);
+  let bi = 0, bv = -1e9; for (let i = 0; i < NN2; i++) if (re[i] > bv) { bv = re[i]; bi = i; }
+  const px = bi % NN, py = (bi / NN) | 0, at = (x, y) => re[((y + NN) % NN) * NN + ((x + NN) % NN)];
+  const sub = (l, c, r) => { const d = l - 2 * c + r; return d < 0 ? 0.5 * (l - r) / d : 0; };
+  let dx = px + sub(at(px - 1, py), bv, at(px + 1, py)), dy = py + sub(at(px, py - 1), bv, at(px, py + 1));
+  if (dx > NN / 2) dx -= NN; if (dy > NN / 2) dy -= NN;
+  if (keep) lastCorr = re;
+  return { dx, dy, q: bv / NN2 };
+}
+// arena (cm): x right, y up
+const AR = { w: 150, h: 100, start: [20, 20], goal: [130, 80], obs: [60, 25, 90, 75], grid: 5, inflate: 9 };
+function blocked(x, y) { const [x0, y0, x1, y1] = AR.obs, m = AR.inflate; return x > x0 - m && x < x1 + m && y > y0 - m && y < y1 + m; }
+function segFree(a, b) { const n = Math.ceil(Math.hypot(b[0] - a[0], b[1] - a[1]) / 2); for (let i = 0; i <= n; i++) { const t = i / Math.max(1, n); if (blocked(a[0] + t * (b[0] - a[0]), a[1] + t * (b[1] - a[1]))) return false; } return true; }
+function astar(s, g) {
+  const G = AR.grid, cw = Math.round(AR.w / G), ch = Math.round(AR.h / G), idx = (i, j) => j * cw + i;
+  const cell = p => [Math.max(0, Math.min(cw - 1, Math.round(p[0] / G))), Math.max(0, Math.min(ch - 1, Math.round(p[1] / G)))];
+  const [si, sj] = cell(s), [gi, gj] = cell(g), cost = new Float64Array(cw * ch).fill(Infinity), prev = new Int32Array(cw * ch).fill(-1), open = [[0, si, sj]];
+  cost[idx(si, sj)] = 0;
+  while (open.length) {
+    let bi = 0; for (let k = 1; k < open.length; k++) if (open[k][0] < open[bi][0]) bi = k;
+    const [, i, j] = open.splice(bi, 1)[0]; if (i === gi && j === gj) break;
+    for (let di = -1; di <= 1; di++) for (let dj = -1; dj <= 1; dj++) {
+      if (!di && !dj) continue; const ni = i + di, nj = j + dj; if (ni < 0 || nj < 0 || ni >= cw || nj >= ch || blocked(ni * G, nj * G)) continue;
+      const nc = cost[idx(i, j)] + Math.hypot(di, dj); if (nc < cost[idx(ni, nj)]) { cost[idx(ni, nj)] = nc; prev[idx(ni, nj)] = idx(i, j); open.push([nc + Math.hypot(gi - ni, gj - nj), ni, nj]); }
+    }
+  }
+  if (prev[idx(gi, gj)] < 0 && !(si === gi && sj === gj)) return [s, g];
+  const path = []; let c = idx(gi, gj); while (c >= 0) { path.push([(c % cw) * G, ((c / cw) | 0) * G]); c = prev[c]; }
+  path.reverse(); path[0] = [...s]; path[path.length - 1] = [...g];
+  const out = [path[0]]; let k = 0; while (k < path.length - 1) { let j = path.length - 1; while (j > k + 1 && !segFree(path[k], path[j])) j--; out.push(path[j]); k = j; }
+  return out;
+}
+const wrapA = a => { while (a > Math.PI) a -= 2 * Math.PI; while (a < -Math.PI) a += 2 * Math.PI; return a; };
+// simulated textured floor (value noise), 5.12 px per cm, matching a phone ~30 cm above the floor
+const PPCM = 5.12, TW = 800, TH = 560, TEX = new Float32Array(TW * TH);
+(function makeTex() {
+  let a = 98765; const r = () => { a |= 0; a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; };
+  for (const [cell, amp] of [[40, 0.45], [14, 0.3], [5, 0.2], [2, 0.12]]) {
+    const gw = Math.ceil(TW / cell) + 2, gh = Math.ceil(TH / cell) + 2, g = new Float32Array(gw * gh); for (let i = 0; i < g.length; i++) g[i] = r();
+    for (let y = 0; y < TH; y++) for (let x = 0; x < TW; x++) { const fx = x / cell, fy = y / cell, x0 = fx | 0, y0 = fy | 0, tx = fx - x0, ty = fy - y0, sx = tx * tx * (3 - 2 * tx), sy = ty * ty * (3 - 2 * ty);
+      const v = g[y0 * gw + x0] * (1 - sx) * (1 - sy) + g[y0 * gw + x0 + 1] * sx * (1 - sy) + g[(y0 + 1) * gw + x0] * (1 - sx) * sy + g[(y0 + 1) * gw + x0 + 1] * sx * sy;
+      TEX[y * TW + x] += amp * v; }
+  }
+})();
+function renderFloor(pos, psi, noise) {
+  const g = new Float32Array(NN2), c = (NN - 1) / 2, fx = -Math.sin(psi), fy = Math.cos(psi), rx = Math.cos(psi), ry = Math.sin(psi);
+  for (let j = 0; j < NN; j++) for (let i = 0; i < NN; i++) {
+    const f = (c - j) / PPCM, rr = (i - c) / PPCM, wx = pos[0] + f * fx + rr * rx, wy = pos[1] + f * fy + rr * ry;
+    let tx = wx * PPCM + 15, ty = TH - 15 - wy * PPCM; tx = Math.max(0, Math.min(TW - 2, tx)); ty = Math.max(0, Math.min(TH - 2, ty));
+    const x0 = tx | 0, y0 = ty | 0, ax = tx - x0, ay = ty - y0, k = y0 * TW + x0;
+    g[j * NN + i] = TEX[k] * (1 - ax) * (1 - ay) + TEX[k + 1] * ax * (1 - ay) + TEX[k + TW] * (1 - ax) * ay + TEX[k + TW + 1] * ax * ay + noise * randnM();
+  }
+  return g;
+}
+const NV = { src: 'sim', k: 1 / PPCM, u: [0, 1], flip: 1, voice: true, lastSpoken: '', lastSpeakT: 0 };
+try { const c = JSON.parse(localStorage.getItem('navCal') || 'null'); if (c && c.k > 0) { NV.k = c.k; NV.u = c.u; NV.flip = c.flip || 1; NV.camCal = true; } } catch (e) {}
+function newTrack(pos) { return { pos: [...pos], psi: 0, path: [[...pos]], prevSpec: null, hist: [], vel: [0, 0] }; }
+function navReset(keepCal) {
+  NV.raw = newTrack(AR.start); NV.flt = newTrack(AR.start);
+  NV.truth = { pos: [...AR.start], psi: 0, path: [[...AR.start]] };
+  NV.route = astar(AR.start, AR.goal); NV.dist = 0; NV.arrived = false; NV.t = 0; NV.calMode = false; NV.calSum = [0, 0];
+  NV.biasSamples = []; NV.bias = 0; NV.biasDone = !nChip.bias; NV.psiComp0 = null; NV.lastRoute = 0; NV.err = null;
+  NV.started = true; NV.q = 0; NV.ms = 0;
+}
+// heading: integrate gyro (both tracks), filtered track removes bias and fuses compass
+function headingStep(rateDeg, dt, compassDeg) {
+  if (!NV.started) return;
+  if (!NV.biasDone) { NV.biasSamples.push(rateDeg); if (NV.biasSamples.length * dt >= 1.0) { NV.bias = NV.biasSamples.reduce((a, b) => a + b, 0) / NV.biasSamples.length; NV.biasDone = true; } return; }
+  NV.raw.psi = wrapA(NV.raw.psi + rateDeg * D2R * dt);
+  let p = NV.flt.psi + (rateDeg - (nChip.bias ? NV.bias : 0)) * D2R * dt;
+  if (nChip.comp && compassDeg != null) { if (NV.psiComp0 === null) NV.psiComp0 = compassDeg; const pc = wrapA((compassDeg - NV.psiComp0) * D2R); p = p + 0.02 * wrapA(pc - p); }
+  NV.flt.psi = wrapA(p);
+}
+function flowToBody(d) { const [ux, uy] = NV.u; return [NV.k * (d.dx * ux + d.dy * uy), NV.flip * NV.k * (d.dx * -uy + d.dy * ux)]; }
+function trackStep(tr, gray, filt) {
+  const S = spec(gray, filt && nChip.win);
+  let out = null;
+  if (tr.prevSpec) {
+    const d = phaseCorr(tr.prevSpec, S, filt); out = d;
+    let m = { dx: d.dx, dy: d.dy };
+    if (filt && nChip.gate && (d.q < 0.04 || Math.hypot(d.dx, d.dy) > 30)) m = { dx: 0, dy: 0 };
+    if (filt && nChip.med) { tr.hist.push(m); if (tr.hist.length > 3) tr.hist.shift(); const med = a => [...a].sort((x, y) => x - y)[a.length >> 1]; m = { dx: med(tr.hist.map(v => v.dx)), dy: med(tr.hist.map(v => v.dy)) }; }
+    let [f, r] = flowToBody(m);
+    if (filt && nChip.lpf) { const a = val('nAlpha'); tr.vel = [a * f + (1 - a) * tr.vel[0], a * r + (1 - a) * tr.vel[1]]; [f, r] = tr.vel; }
+    if (NV.calMode && filt) { NV.calSum[0] += m.dx; NV.calSum[1] += m.dy; }
+    else if (NV.biasDone) {
+      tr.pos[0] += f * -Math.sin(tr.psi) + r * Math.cos(tr.psi); tr.pos[1] += f * Math.cos(tr.psi) + r * Math.sin(tr.psi);
+      const lp = tr.path[tr.path.length - 1]; if (Math.hypot(tr.pos[0] - lp[0], tr.pos[1] - lp[1]) > 1) { tr.path.push([...tr.pos]); if (filt) NV.dist += Math.hypot(tr.pos[0] - lp[0], tr.pos[1] - lp[1]); }
+    }
+  }
+  tr.prevSpec = S; return out;
+}
+function directions() {
+  const p = NV.flt.pos, g = AR.goal, dG = Math.hypot(g[0] - p[0], g[1] - p[1]);
+  if (dG < 7) return { arrived: true, turn: 0, text: 'Arrived ✓', sub: 'within ' + dG.toFixed(0) + ' cm of the goal (estimate)', key: 'arrived' };
+  if (performance.now() - NV.lastRoute > 300) { NV.route = astar(p, g); NV.lastRoute = performance.now(); }
+  const R = NV.route; let tgt = R[R.length - 1];
+  for (let i = 1; i < R.length; i++) if (Math.hypot(R[i][0] - p[0], R[i][1] - p[1]) > 12) { tgt = R[i]; break; }
+  const bearing = Math.atan2(-(tgt[0] - p[0]), tgt[1] - p[1]), turn = wrapA(bearing - NV.flt.psi), deg = turn * R2D;
+  let left = 0; for (let i = 1; i < R.length; i++) left += Math.hypot(R[i][0] - R[i - 1][0], R[i][1] - R[i - 1][1]);
+  if (Math.abs(deg) > 25) return { turn, text: (deg > 0 ? 'Turn left ' : 'Turn right ') + Math.abs(deg).toFixed(0) + '°', sub: left.toFixed(0) + ' cm to goal', key: deg > 0 ? 'left' : 'right' };
+  return { turn, text: 'Go straight', sub: left.toFixed(0) + ' cm to goal', key: 'straight' };
+}
+function speak(key, text) {
+  if (!NV.voice || !window.speechSynthesis) return; const now = performance.now();
+  if (key === NV.lastSpoken && now - NV.lastSpeakT < 6000) return; if (now - NV.lastSpeakT < 1800) return;
+  NV.lastSpoken = key; NV.lastSpeakT = now;
+  try { speechSynthesis.cancel(); speechSynthesis.speak(new SpeechSynthesisUtterance(text.replace('°', ' degrees').replace('✓', ''))); } catch (e) {}
+}
+// sim pilot follows the directions using the filtered estimate (like a person following the app)
+function simStep(dt) {
+  const T = NV.truth; let rate = 0, dirs = null;
+  if (NV.biasDone && !NV.arrived) {
+    dirs = directions();
+    if (dirs.arrived) { NV.arrived = true; NV.arrivedDirs = dirs; NV.err = { raw: Math.hypot(NV.raw.pos[0] - T.pos[0], NV.raw.pos[1] - T.pos[1]), flt: Math.hypot(T.pos[0] - AR.goal[0], T.pos[1] - AR.goal[1]) }; }
+    else { rate = Math.max(-60, Math.min(60, dirs.turn * R2D * 2.5)); T.psi = wrapA(T.psi + rate * D2R * dt); if (Math.abs(dirs.turn * R2D) < 30) { const v = 15 * dt; T.pos[0] += v * -Math.sin(T.psi); T.pos[1] += v * Math.cos(T.psi); T.path.push([...T.pos]); } }
+  }
+  if (NV.arrived && !dirs) dirs = NV.arrivedDirs;
+  const gyro = rate + val('nBias') + 0.6 * randnM(), compass = T.psi * R2D + 4 * randnM();
+  const sub = 5; for (let i = 0; i < sub; i++) headingStep(gyro, dt / sub, compass);
+  const gray = renderFloor(T.pos, T.psi, val('nNoise'));
+  const t0 = performance.now(); const d = trackStep(NV.flt, gray, true); trackStep(NV.raw, gray, false); NV.ms = performance.now() - t0;
+  if (d) NV.q = d.q; NV.lastGray = gray; NV.lastFlow = d; NV.t += dt;
+  return dirs;
+}
+// live camera
+const ncv = document.createElement('canvas'); ncv.width = NN; ncv.height = NN; const ncx = ncv.getContext('2d', { willReadFrequently: true });
+function camGray() {
+  const vw = vid.videoWidth, vh = vid.videoHeight, s = Math.min(vw, vh) * 0.6;
+  ncx.drawImage(vid, (vw - s) / 2, (vh - s) / 2, s, s, 0, 0, NN, NN);
+  const d = ncx.getImageData(0, 0, NN, NN).data, g = new Float32Array(NN2);
+  for (let i = 0; i < NN2; i++) g[i] = (0.299 * d[i * 4] + 0.587 * d[i * 4 + 1] + 0.114 * d[i * 4 + 2]) / 255;
+  return g;
+}
+NV.live = { rate: 0, compass: null, lastT: 0 };
+window.addEventListener('devicemotion', e => { const r = e.rotationRate; if (!r || r.alpha == null) return; const now = performance.now(), dt = NV.live.lastT ? (now - NV.live.lastT) / 1000 : 0; NV.live.lastT = now; if (NV.src === 'cam' && dt > 0 && dt < 0.2) headingStep(r.alpha, dt, NV.live.compass); });
+window.addEventListener('deviceorientationabsolute', e => { if (e.alpha != null) NV.live.compass = e.alpha; });
+function liveStep() {
+  if (!vid.videoWidth) return null;
+  const gray = camGray(), t0 = performance.now(); const d = trackStep(NV.flt, gray, true); trackStep(NV.raw, gray, false); NV.ms = performance.now() - t0;
+  if (d) NV.q = d.q; NV.lastGray = gray; NV.lastFlow = d;
+  return NV.biasDone && !NV.calMode ? directions() : null;
+}
+document.querySelectorAll('[data-nsrc]').forEach(b => b.onclick = async () => {
+  const s = b.dataset.nsrc;
+  if (s === 'cam') {
+    try {
+      startMotion();
+      if (!camStream) { camStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment', width: { ideal: 640 }, height: { ideal: 480 } }, audio: false }); vid.srcObject = camStream; await vid.play(); }
+    } catch (e) { $('nMsg').textContent = 'Camera blocked here (' + e.name + '). Open the GitHub Pages link in Chrome on your phone.'; return; }
+  }
+  NV.src = s; document.querySelectorAll('[data-nsrc]').forEach(x => x.classList.toggle('on', x.dataset.nsrc === s));
+  $('nMsg').textContent = '';
+  $('nHint').textContent = s === 'sim' ? 'Simulation: a virtual phone flies over a textured floor and follows the app\'s directions. White = true path, blue = filtered estimate, red = raw estimate.'
+    : 'Live: hold the phone flat, screen up, about 30 cm above a textured surface (newspaper, tiles, wood). Top edge = forward. ' + (NV.camCal ? 'Calibration loaded.' : 'Do "Calibrate 50 cm" once first.') + ' Then put the phone on START facing up the map and tap Set start.';
+  NV.started = false; $('nInstr').textContent = 'Tap Set start'; $('nSub').textContent = s === 'sim' ? 'the virtual phone will fly to the goal' : 'hold still for 1 s after tapping';
+});
+$('nStart').onclick = () => {
+  if (NV.src === 'cam' && !NV.camCal) { $('nMsg').textContent = 'Tip: calibrate first so distances are in real cm. Using a rough default for now.'; NV.k = 0.08; }
+  try { speechSynthesis.speak(new SpeechSynthesisUtterance(NV.voice ? 'Starting. Hold still.' : '')); } catch (e) {}
+  navReset(); $('nInstr').textContent = 'Hold still…'; $('nSub').textContent = 'measuring gyro bias (1 s)';
+};
+$('nCal').onclick = () => {
+  if (!NV.started) navReset();
+  if (!NV.calMode) { NV.calMode = true; NV.calSum = [0, 0]; NV.flt.prevSpec = null; $('nCal').textContent = 'Stop (moved 50 cm)'; $('nCal').classList.add('on'); $('nInstr').textContent = 'Move forward 50 cm'; $('nSub').textContent = 'slide the phone straight along a ruler, top edge first, then tap Stop'; return; }
+  NV.calMode = false; $('nCal').textContent = 'Calibrate 50 cm'; $('nCal').classList.remove('on');
+  const L = Math.hypot(NV.calSum[0], NV.calSum[1]);
+  if (L < 20) { $('nMsg').textContent = 'Calibration failed: almost no motion seen (' + L.toFixed(0) + ' px). Use a more textured surface and move slower.'; return; }
+  NV.k = 50 / L; NV.u = [NV.calSum[0] / L, NV.calSum[1] / L]; NV.camCal = true;
+  try { localStorage.setItem('navCal', JSON.stringify({ k: NV.k, u: NV.u, flip: NV.flip })); } catch (e) {}
+  $('nMsg').textContent = 'Calibrated: ' + (10 * NV.k).toFixed(2) + ' mm per pixel. Saved on this phone.'; navReset();
+};
+$('nGoal').onclick = () => {
+  if (!NV.started) return; const g = AR.goal;
+  NV.err = { raw: Math.hypot(NV.raw.pos[0] - g[0], NV.raw.pos[1] - g[1]), flt: Math.hypot(NV.flt.pos[0] - g[0], NV.flt.pos[1] - g[1]) };
+  $('nMsg').textContent = `At the real goal: filtered estimate was ${NV.err.flt.toFixed(0)} cm off, raw ${NV.err.raw.toFixed(0)} cm, after ${NV.dist.toFixed(0)} cm travelled (drift ${(100 * NV.err.flt / Math.max(1, NV.dist)).toFixed(1)}%).`;
+};
+$('nVoice').onclick = () => { NV.voice = !NV.voice; $('nVoice').classList.toggle('on', NV.voice); $('nVoice').textContent = NV.voice ? 'Voice on' : 'Voice off'; };
+$('nFlip').onclick = () => { NV.flip *= -1; $('nFlip').classList.toggle('on', NV.flip < 0); try { localStorage.setItem('navCal', JSON.stringify({ k: NV.k, u: NV.u, flip: NV.flip })); } catch (e) {} };
+function showTab(name) {
+  document.querySelectorAll('nav button').forEach(x => x.classList.toggle('on', x.dataset.tab === name));
+  document.querySelectorAll('section').forEach(sec => sec.classList.toggle('on', sec.id === name)); tab = name; window.scrollTo(0, 0);
+}
+$('nToBeacon').onclick = () => showTab('beacon');
+$('bBack').onclick = () => showTab('nav');
+$('nMap').addEventListener('pointerdown', ev => {
+  const cv = $('nMap'), r = cv.getBoundingClientRect(), g = nGeom(cv);
+  const x = ((ev.clientX - r.left) * g.d - g.ox) / g.s, y = (g.oy - (ev.clientY - r.top) * g.d) / g.s;
+  if (x > 3 && x < AR.w - 3 && y > 3 && y < AR.h - 3 && !blocked(x, y)) { AR.goal = [x, y]; if (NV.started) { NV.route = astar(NV.flt.pos, AR.goal); NV.arrived = false; NV.err = null; } }
+});
+function nGeom(cv) { const d = Math.min(window.devicePixelRatio || 1, 2), w = cv.width, h = cv.height, pad = 14 * d, s = Math.min((w - 2 * pad) / AR.w, (h - 2 * pad) / AR.h); return { d, s, ox: (w - s * AR.w) / 2, oy: h - (h - s * AR.h) / 2 }; }
+function navDraw(dirs, fresh) {
+  const cv = $('nMap'); sizeCanvas(cv); const c = cv.getContext('2d'), g = nGeom(cv), d = g.d, X = x => g.ox + x * g.s, Y = y => g.oy - y * g.s;
+  c.clearRect(0, 0, cv.width, cv.height);
+  c.strokeStyle = '#1a2236'; c.lineWidth = 1; for (let x = 0; x <= AR.w; x += 10) { c.beginPath(); c.moveTo(X(x), Y(0)); c.lineTo(X(x), Y(AR.h)); c.stroke(); } for (let y = 0; y <= AR.h; y += 10) { c.beginPath(); c.moveTo(X(0), Y(y)); c.lineTo(X(AR.w), Y(y)); c.stroke(); }
+  c.strokeStyle = '#46557a'; c.lineWidth = 2 * d; c.strokeRect(X(0), Y(AR.h), AR.w * g.s, AR.h * g.s);
+  const [o0, o1, o2, o3] = AR.obs; c.fillStyle = '#3a4560'; c.fillRect(X(o0), Y(o3), (o2 - o0) * g.s, (o3 - o1) * g.s); c.fillStyle = '#8a96b3'; c.font = (10 * d) + 'px system-ui'; c.fillText('obstacle', X(o0) + 4 * d, Y((o1 + o3) / 2));
+  c.fillText('10 cm grid', X(0) + 4 * d, Y(0) - 4 * d);
+  c.fillStyle = '#2fbf71'; c.beginPath(); c.arc(X(AR.start[0]), Y(AR.start[1]), 6 * d, 0, 2 * Math.PI); c.fill(); c.fillText('START', X(AR.start[0]) + 8 * d, Y(AR.start[1]) + 4 * d);
+  c.fillStyle = '#ffd23f'; c.beginPath(); c.arc(X(AR.goal[0]), Y(AR.goal[1]), 7 * d, 0, 2 * Math.PI); c.fill(); c.fillText('GOAL', X(AR.goal[0]) - 32 * d, Y(AR.goal[1]) - 10 * d);
+  const line = (arr, col, w, dash) => { if (!arr || arr.length < 2) return; c.strokeStyle = col; c.lineWidth = w * d; c.setLineDash(dash ? [6 * d, 5 * d] : []); c.beginPath(); arr.forEach((p, i) => i ? c.lineTo(X(p[0]), Y(p[1])) : c.moveTo(X(p[0]), Y(p[1]))); c.stroke(); c.setLineDash([]); };
+  if (NV.started) {
+    line(NV.route && [NV.flt.pos, ...NV.route.slice(1)], '#ffd23f', 2, true);
+    line(NV.raw.path, 'rgba(255,107,107,.85)', 1.8);
+    if (NV.src === 'sim') line(NV.truth.path, '#ffffff', 2.4);
+    line(NV.flt.path, '#4f8cff', 2.4);
+    const tri = (p, psi, col) => { c.save(); c.translate(X(p[0]), Y(p[1])); c.rotate(-psi); c.fillStyle = col; c.beginPath(); c.moveTo(0, -11 * d); c.lineTo(-7 * d, 7 * d); c.lineTo(7 * d, 7 * d); c.closePath(); c.fill(); c.restore(); };
+    tri(NV.raw.pos, NV.raw.psi, 'rgba(255,107,107,.9)'); if (NV.src === 'sim') tri(NV.truth.pos, NV.truth.psi, '#ffffff'); tri(NV.flt.pos, NV.flt.psi, '#4f8cff');
+  }
+  // arrow
+  const ac = $('nArrow'), ax = ac.getContext('2d'); ax.clearRect(0, 0, 220, 220);
+  if (dirs) {
+    ax.save(); ax.translate(110, 110);
+    if (dirs.arrived) { ax.strokeStyle = '#2fbf71'; ax.lineWidth = 16; ax.beginPath(); ax.moveTo(-45, 0); ax.lineTo(-10, 38); ax.lineTo(50, -40); ax.stroke(); }
+    else { ax.rotate(-dirs.turn); ax.fillStyle = Math.abs(dirs.turn * R2D) > 25 ? '#ffb020' : '#4f8cff'; ax.beginPath(); ax.moveTo(0, -85); ax.lineTo(55, -20); ax.lineTo(20, -20); ax.lineTo(20, 75); ax.lineTo(-20, 75); ax.lineTo(-20, -20); ax.lineTo(-55, -20); ax.closePath(); ax.fill(); }
+    ax.restore(); $('nInstr').textContent = dirs.text; $('nSub').textContent = dirs.sub; if (fresh) speak(dirs.key, dirs.text);
+  }
+  // camera patch + correlation surface
+  if (NV.lastGray) {
+    const cc = $('nCam').getContext('2d'), id = cc.createImageData(NN, NN);
+    for (let i = 0; i < NN2; i++) { const v = Math.max(0, Math.min(255, NV.lastGray[i] * 255)); id.data[i * 4] = id.data[i * 4 + 1] = id.data[i * 4 + 2] = v; id.data[i * 4 + 3] = 255; }
+    ncx.putImageData(id, 0, 0); cc.imageSmoothingEnabled = false; cc.drawImage(ncv, 0, 0, 256, 256);
+    if (NV.lastFlow) { cc.strokeStyle = '#2fbf71'; cc.lineWidth = 3; cc.beginPath(); cc.moveTo(128, 128); cc.lineTo(128 + NV.lastFlow.dx * 8, 128 + NV.lastFlow.dy * 8); cc.stroke(); }
+    if (lastCorr) {
+      const kc = $('nCorr').getContext('2d'), kd = kc.createImageData(NN, NN); let mx = 1e-9; for (let i = 0; i < NN2; i++) mx = Math.max(mx, lastCorr[i]);
+      for (let y = 0; y < NN; y++) for (let x = 0; x < NN; x++) { const sx = (x + NN / 2) % NN, sy = (y + NN / 2) % NN, v = Math.max(0, lastCorr[sy * NN + sx] / mx), o = (y * NN + x) * 4; kd.data[o] = 255 * Math.min(1, v * 1.4); kd.data[o + 1] = 255 * Math.min(1, v * v * 1.6); kd.data[o + 2] = 60 + 140 * v; kd.data[o + 3] = 255; }
+      ncx.putImageData(kd, 0, 0); kc.imageSmoothingEnabled = false; kc.drawImage(ncv, 0, 0, 256, 256);
+      kc.strokeStyle = 'rgba(255,255,255,.35)'; kc.beginPath(); kc.moveTo(128, 0); kc.lineTo(128, 256); kc.moveTo(0, 128); kc.lineTo(256, 128); kc.stroke();
+    }
+  }
+  if (NV.started) {
+    $('nPos').textContent = NV.flt.pos.map(v => v.toFixed(0)).join(', ') + ' cm'; $('nHead').textContent = (NV.flt.psi * R2D).toFixed(0) + '°';
+    $('nQ').innerHTML = NV.q > 0.08 ? `<span class="good">good (${NV.q.toFixed(2)})</span>` : NV.q > 0.04 ? `ok (${NV.q.toFixed(2)})` : `<span class="badc">low (${NV.q.toFixed(2)})</span>`;
+    if (NV.src === 'sim') { const T = NV.truth.pos; $('nErr').innerHTML = `<span class="badc">${Math.hypot(NV.raw.pos[0] - T[0], NV.raw.pos[1] - T[1]).toFixed(0)} cm</span> → <span class="good">${Math.hypot(NV.flt.pos[0] - T[0], NV.flt.pos[1] - T[1]).toFixed(0)} cm</span>`; }
+    else $('nErr').innerHTML = NV.err ? `<span class="badc">${NV.err.raw.toFixed(0)}</span> → <span class="good">${NV.err.flt.toFixed(0)} cm</span>` : 'tap "I\'m at the goal"';
+    $('nDist').textContent = NV.dist.toFixed(0) + ' cm'; $('nMs').textContent = NV.ms.toFixed(1) + ' ms/frame';
+  }
+}
+$('nTrials').onclick = async () => {
+  if (NV.trialBusy) return; NV.trialBusy = true; const keepSrc = NV.src; NV.src = 'sim'; const rows = [];
+  for (let k = 0; k < 5; k++) {
+    $('nTrialOut').textContent = 'Running trial ' + (k + 1) + ' of 5…'; await new Promise(r => setTimeout(r, 0));
+    navReset(); let n = 0; while (!NV.arrived && n < 900) { simStep(1 / 15); n++; if (n % 60 === 0) await new Promise(r => setTimeout(r, 0)); }
+    const T = NV.truth.pos, eR = Math.hypot(NV.raw.pos[0] - T[0], NV.raw.pos[1] - T[1]), eF = Math.hypot(T[0] - AR.goal[0], T[1] - AR.goal[1]);
+    rows.push([k + 1, NV.arrived ? 'yes' : 'timeout', NV.dist, eF, eR, 100 * eF / Math.max(1, NV.dist)]);
+  }
+  NV.src = keepSrc; NV.trialBusy = false;
+  const avg = i => rows.reduce((s, r) => s + r[i], 0) / rows.length;
+  $('nTrialOut').innerHTML = table('E6', 'E6 Optical-flow navigation (sim, 5 runs)', ['Run', 'Arrived', 'Path cm', 'Goal error cm (filtered)', 'Raw estimate error cm', 'Drift %'], [...rows, ['Mean', '', avg(2), avg(3), avg(4), avg(5)]], [0, 0, 0, 1, 1, 2], rows.length) +
+    `<div class="verdict">Following the filtered estimate, the phone ends ${avg(3).toFixed(1)} cm from the goal on average (${avg(5).toFixed(1)}% drift over ${avg(2).toFixed(0)} cm). The raw estimate (no window, no gating, no bias calibration, gyro-only heading) is ${avg(4).toFixed(0)} cm off at the same moment.</div>`;
+};
+
 // ---------- main loop ----------
 function updBadge() {
   if (tab === 'vision') vSrc === 'cam' ? setBadge('LIVE camera', 'live') : vSrc === 'photo' ? setBadge('Your photo', 'live') : setBadge('Synthetic track', 'sim');
   else if (tab === 'drone') setBadge((drone.src === 'cam' ? 'LIVE camera' : 'synthetic track') + ' · ' + (imu.live ? 'LIVE IMU' : 'sim IMU'), drone.src === 'cam' && imu.live ? 'live' : 'sim');
   else if (tab === 'results') setBadge('Experiments', '');
+  else if (tab === 'nav') NV.src === 'sim' ? setBadge('Simulated floor', 'sim') : setBadge('LIVE camera + gyro', 'live');
   else if (tab === 'beacon') BC.src === 'sim' ? setBadge('Simulated ESP32s', 'sim') : setBadge(BC.src === 'csv' ? 'Replaying ESP32 log' : 'LIVE ESP32', 'live');
   else if (tab === 'imu') imu.live ? setBadge('LIVE phone sensors', 'live') : setBadge('SIMULATED sensors', 'sim');
   else setBadge('Simulation', 'sim');
 }
-let lastV = 0, lastF = 0, lastD = 0, lastB = 0, altAcc = 0, lastA = performance.now();
+let lastV = 0, lastF = 0, lastD = 0, lastB = 0, lastN = 0, altAcc = 0, lastA = performance.now();
 function loop(now) {
   updBadge();
   if (tab === 'vision' && now - lastV > 60) { lastV = now; visionStep(); }
@@ -1555,6 +1902,7 @@ function loop(now) {
   while (altAcc > 1 / AFS) { altTick(); altAcc -= 1 / AFS; }
   if (tab === 'alt') altDraw();
   if (tab === 'imu') imuDraw();
+  if (tab === 'nav') { let fresh = false; if (NV.started && now - lastN > 66 && !NV.trialBusy) { lastN = now; const dd = NV.src === 'sim' ? simStep(1 / 15) : liveStep(); NV.lastDirs = NV.biasDone ? dd : null; fresh = true; } navDraw(NV.started ? NV.lastDirs : null, fresh); }
   if (tab === 'beacon') { if (BC.src === 'sim' && now - lastB > 50) { lastB = now; bSimStep(); } bDraw(); }
   if (tab === 'drone' && now - lastD > 66) { lastD = now; droneStep(); }
   if (tab === 'flight' && now - lastF > 50) { lastF = now; flyStep(); if (fly.fast) flyStep(); flyDraw(); }

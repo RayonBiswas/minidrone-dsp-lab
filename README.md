@@ -14,7 +14,8 @@ Classical DSP (no AI/ML) for camera, IMU and altitude signals: DSP course projec
   - **Camera / IMU / Altitude**: each path on its own, with filters you can switch off and sliders that inject noise
   - **Flight**: closed loop, comparing a raw drone and a DSP drone on the same noisy camera
   - **Drone**: camera and IMU together (track tracking plus an artificial horizon showing roll and pitch); hold the phone flat with the back camera facing down
-  - **Beacon**: ESP32 navigation. 3 anchors → RSSI → median/Kalman → path-loss distance → trilateration → position Kalman → live map. Simulate, replay a CSV log, or connect a real ESP32 (Bluetooth on phone, USB on laptop). Firmware is in `esp32/`.
+  - **Navigate**: the phone locates itself with no extra hardware. Downward camera → Hann window → 2D FFT phase correlation (optical flow) → quality gate → median → low-pass, plus gyro heading with bias calibration and compass fusion. Shows a live map of a 150 × 100 cm arena with an obstacle, an A* route, arrow + voice directions, and raw vs filtered paths. Also has a simulation with ground truth and a 5-run drift test.
+  - **Beacon (archived)**: the earlier ESP32 RSSI trilateration idea, kept as a simulation; firmware is in `archive/esp32/`. Open it from the Navigate tab.
   - **Results**: runs every comparison from the proposal with a fixed seed (E1 filter vs filter, E2 accuracy vs noise, E3 FIR vs IIR, notch and fusion, E4 altitude, E5 flight), then Copy tables or Download CSV
   - Falls back to simulated sensors when the real ones are unavailable.
 - `matlab/minidrone_dsp_sim.m`: the full simulation in MATLAB (Image Processing and Signal Processing Toolboxes).
