@@ -34,6 +34,7 @@
 - **Altitude**: simulated take-off/hover/landing; median 7 → moving average 15 → 1D Kalman; spike burst button.
 - **Flight**: a competition-style straight-segment track. Two drones get the same noise: raw (yellow) vs DSP (blue). Shows tracking error and steering jerk.
 - **Drone**: camera + IMU together. Phone held flat, back camera down, top edge = nose. Artificial horizon shows roll and pitch, plus tracking and steering.
+- **Beacon**: ESP32 beacon navigation (see esp32/README.md). Sim with path-loss + shadowing + multipath fades; raw vs filtered drones fly start → goal; calibration fit (P0, n); live input via Web Bluetooth (Nordic UART, device DRONE-RX) or Web Serial 115200; CSV replay (esp32/sample_log.csv). Sim result: position error about 2.2 m raw → about 0.8–1.0 m filtered; the median gives the biggest gain; the position Kalman mainly smooths the path rather than cutting RMS error.
 - **Results**: E1–E5 with a fixed seed (mulberry32 `setSeed`). Live sensor sims use `randnM` (Math.random) so they never disturb the seeded runs. Copy tables (Markdown) and Download CSV.
 
 ## Current results (fixed seed, deterministic)
@@ -50,6 +51,10 @@
 - **E4 altitude:** raw 20 dB → median + Kalman 34.6 dB SNR. Linear filters smear spikes; the median removes them.
 - **E5 flight:** both drones stay on track. The DSP drone steers 7–9× more smoothly at about 1 cm more tracking error (low-pass lag).
 - **Honesty rule:** never tune or fake results to make "ours" win. Hough voting is already robust, so the DSP gain is precision and smoothness. Present trade-offs openly.
+
+## Commit rules
+- Commits authored as RayonBiswas only. No Co-Authored-By or Claude-Session lines, no "Generated with" footers.
+- No force-push or history rewrite without his go-ahead and a backup.
 
 ## Known issues
 - **Brave browser blocks motion sensors**; use Chrome on the phone (Android). In-app browsers (WhatsApp/Gmail) also block sensors.
