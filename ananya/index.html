@@ -1,0 +1,2190 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>Mini-Drone DSP Lab</title>
+<style>
+:root{--bg:#0f1420;--card:#171e2e;--line:#26304a;--txt:#e6ebf5;--mut:#8a96b3;--acc:#4f8cff;--ok:#2fbf71;--bad:#ff5a5f;--warn:#ffb020}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+body{margin:0;background:var(--bg);color:var(--txt);font:14px/1.4 system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
+header{padding:12px 14px 6px;display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+header h1{font-size:17px;margin:0;font-weight:650;flex:1;min-width:200px}
+header h1 small{display:block;font-size:11.5px;color:var(--mut);font-weight:400}
+.badge{font-size:11px;padding:3px 8px;border-radius:20px;border:1px solid var(--line);color:var(--mut);white-space:nowrap}
+.badge.live{color:#fff;background:var(--ok);border-color:var(--ok)}
+.badge.sim{color:#111;background:var(--warn);border-color:var(--warn)}
+nav{display:flex;gap:6px;padding:6px 12px 10px;position:sticky;top:0;background:var(--bg);z-index:5;overflow-x:auto}
+nav button{flex:1;min-width:76px;padding:9px 6px;border-radius:10px;border:1px solid var(--line);background:var(--card);color:var(--mut);font-weight:600;font-size:13px}
+nav button.on{background:var(--acc);color:#fff;border-color:var(--acc)}
+section{display:none;padding:0 12px 40px;max-width:900px;margin:0 auto}
+section.on{display:block}
+.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:12px;margin-bottom:10px}
+.card h3{margin:0 0 8px;font-size:13px;color:var(--mut);font-weight:600;text-transform:uppercase;letter-spacing:.04em}
+.pipe{display:flex;flex-wrap:wrap;align-items:center;gap:4px}
+.chip{padding:6px 9px;border-radius:8px;font-size:12px;border:1px solid var(--line);background:#1d2539;color:var(--txt);user-select:none}
+.chip.t{cursor:pointer;border-style:dashed}
+.chip.t.on{background:#1b3a6b;border:1px solid var(--acc);color:#fff}
+.chip.t:not(.on){opacity:.55;text-decoration:line-through}
+.arr{color:var(--mut);font-size:11px}
+.hint{font-size:11.5px;color:var(--mut);margin-top:6px}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.panel{position:relative}
+.panel canvas{width:100%;display:block;border-radius:8px;background:#000;image-rendering:pixelated}
+.panel span{position:absolute;left:6px;top:5px;font-size:10.5px;background:rgba(0,0,0,.6);padding:1px 6px;border-radius:6px}
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:6px}
+.stat{background:#1d2539;border-radius:10px;padding:7px 9px}
+.stat b{display:block;font-size:17px;font-variant-numeric:tabular-nums}
+.stat i{font-style:normal;font-size:11px;color:var(--mut)}
+.good{color:var(--ok)}.badc{color:var(--bad)}
+.row{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px}
+.btn{padding:9px 12px;border-radius:10px;border:1px solid var(--line);background:#1d2539;color:var(--txt);font-weight:600;font-size:13px}
+.btn.on,.btn.pri{background:var(--acc);border-color:var(--acc);color:#fff}
+.sl{display:grid;grid-template-columns:118px 1fr 52px;align-items:center;gap:8px;margin:7px 0;font-size:12.5px}
+.sl output{text-align:right;color:var(--mut);font-variant-numeric:tabular-nums}
+input[type=range]{width:100%;accent-color:var(--acc)}
+.legend{display:flex;flex-wrap:wrap;gap:10px;font-size:11.5px;color:var(--mut);margin-top:6px}
+.legend em{display:inline-block;width:14px;height:3px;border-radius:2px;margin-right:4px;vertical-align:middle}
+canvas.plot{width:100%;height:190px;display:block;background:#0b101a;border-radius:8px}
+.steer{height:26px;background:#0b101a;border-radius:8px;position:relative;overflow:hidden}
+.steer div{position:absolute;top:0;bottom:0;left:50%;background:var(--acc);transition:all .08s}
+.steer:after{content:"";position:absolute;left:50%;top:0;bottom:0;width:2px;background:#fff}
+.msg{font-size:12.5px;color:var(--warn);margin:6px 0 0}
+.cols{display:grid;grid-template-columns:1fr;gap:10px}
+table.tbl{width:100%;border-collapse:collapse;font-size:12px;margin-top:6px}
+.tbl th,.tbl td{padding:5px 6px;border-bottom:1px solid var(--line);text-align:right;font-variant-numeric:tabular-nums}
+.tbl th:first-child,.tbl td:first-child{text-align:left}
+.tbl th{color:var(--mut);font-weight:600}
+.tbl tr.best td{color:var(--ok);font-weight:650}
+.verdict{background:#13261d;border:1px solid #1f5c3c;border-radius:10px;padding:8px 10px;font-size:12.5px;margin-top:8px}
+.prog{height:6px;background:#0b101a;border-radius:4px;overflow:hidden;margin-top:8px}.prog div{height:100%;width:0;background:var(--acc);transition:width .2s}
+.tblwrap{overflow-x:auto}
+@media(min-width:760px){.cols{grid-template-columns:1.25fr 1fr}}
+</style>
+</head>
+<body>
+<header>
+  <h1>Noise-Robust Path Tracking · DSP Lab<small>Classical DSP on live phone sensors: camera, accelerometer, gyroscope</small></h1>
+  <span class="badge" id="badge">idle</span>
+</header>
+<nav>
+  <button data-tab="vision" class="on">Camera</button>
+  <button data-tab="imu">IMU</button>
+  <button data-tab="alt">Altitude</button>
+  <button data-tab="flight">Flight</button>
+  <button data-tab="drone">Drone</button>
+  <button data-tab="nav" id="navTabBtn">Navigate</button>
+  <button data-tab="results">Results</button>
+</nav>
+
+<!-- ================= VISION ================= -->
+<section id="vision" class="on">
+  <div class="card">
+    <h3>Vision pipeline <span style="text-transform:none;font-weight:400">(tap dashed blocks to switch them off)</span></h3>
+    <div class="pipe" id="vPipe">
+      <span class="chip">Camera</span><span class="arr">→</span>
+      <span class="chip t on" data-k="median">Median 3×3</span><span class="arr">→</span>
+      <span class="chip t" data-k="gauss">Gaussian 5×5</span><span class="arr">→</span>
+      <span class="chip">RGB→HSV threshold</span><span class="arr">→</span>
+      <span class="chip t on" data-k="morph" id="morphChip">Close + Open</span><span class="arr">→</span>
+      <span class="chip t" data-k="roi" id="roiChip">Bottom ½ ROI</span><span class="arr">→</span>
+      <span class="chip t on" data-k="blob">Biggest blob</span><span class="arr">→</span>
+      <span class="chip">Edges</span><span class="arr">→</span>
+      <span class="chip">Hough</span><span class="arr">→</span>
+      <span class="chip t on" data-k="lpf">Low-pass</span><span class="arr">→</span>
+      <span class="chip">PID steer</span><span class="arr">|</span>
+      <span class="chip">Blue pad mask</span><span class="arr">→</span>
+      <span class="chip t on" data-k="vote">Vote 6 of 8 frames</span><span class="arr">→</span>
+      <span class="chip">LAND</span>
+    </div>
+  </div>
+  <div class="card">
+    <div class="row">
+      <button class="btn on" data-src="synth">Synthetic track</button>
+      <button class="btn" data-src="cam">Phone camera</button>
+      <button class="btn" data-src="photo">Photo</button>
+      <input type="file" id="photoIn" accept="image/*" hidden>
+    </div>
+    <div class="row" id="colRow">
+      <button class="btn on" data-col="red">Red</button>
+      <button class="btn" data-col="blue">Blue</button>
+      <button class="btn" data-col="green">Green</button>
+      <button class="btn" data-col="yellow">Yellow</button>
+      <button class="btn" data-col="black">Black</button>
+      <button class="btn" data-col="pick" id="pickBtn" hidden>Picked <em id="pickSw" style="display:inline-block;width:12px;height:12px;border-radius:3px;vertical-align:-1px;margin-left:4px"></em></button>
+    </div>
+    <p class="hint" id="pickHint" style="font-size:12.5px;color:var(--mut,#9aa4b8);margin:4px 0 8px">Tip: tap the track in panel 1 to lock the threshold onto its exact colour (works on camera and photo).</p>
+    <video id="vid" playsinline muted hidden></video>
+    <div class="grid2">
+      <div class="panel"><canvas id="c1" width="320" height="240"></canvas><span>1 · input + injected noise</span></div>
+      <div class="panel"><canvas id="c2" width="320" height="240"></canvas><span>2 · HSV threshold (raw)</span></div>
+      <div class="panel"><canvas id="c3" width="320" height="240"></canvas><span>3 · filtered mask</span></div>
+      <div class="panel"><canvas id="c4" width="320" height="240"></canvas><span>4 · edges + Hough line</span></div>
+    </div>
+    <div class="legend"><span><em style="background:#2fbf71"></em>DSP pipeline</span><span><em style="background:#ffd23f"></em>raw (no filters)</span><span id="truthLeg"><em style="background:#fff"></em>ground truth</span></div>
+    <p class="msg" id="vMsg"></p>
+  </div>
+  <div class="card">
+    <h3>Steering command</h3>
+    <div class="steer"><div id="steerBar"></div></div>
+    <div class="stats" style="margin-top:8px">
+      <div class="stat"><i>Line angle θ</i><b id="sTh">–</b></div>
+      <div class="stat"><i>Offset d</i><b id="sD">–</b></div>
+      <div class="stat"><i>θ jitter frame-to-frame</i><b id="sJit">–</b></div>
+      <div class="stat" id="accBox"><i>Angle error vs truth (RMS)</i><b id="sAcc">–</b></div>
+      <div class="stat"><i>Processing time</i><b id="sMs">–</b></div>
+      <div class="stat"><i>Landing pad (blue)</i><b id="sPad">–</b></div>
+      <div class="stat"><i>Pad flicker raw → voted</i><b id="sFlick">–</b></div>
+    </div>
+  </div>
+  <div class="card">
+    <h3>Inject noise</h3>
+    <div class="sl"><label>Gaussian σ</label><input type="range" id="vSig" min="0" max="0.3" step="0.01" value="0.10"><output></output></div>
+    <div class="sl"><label>Salt &amp; pepper %</label><input type="range" id="vSp" min="0" max="25" step="1" value="8"><output></output></div>
+    <div class="sl"><label>Uneven lighting</label><input type="range" id="vLight" min="0" max="1.2" step="0.05" value="0.7"><output></output></div>
+    <div class="sl"><label>Motion blur (px)</label><input type="range" id="vBlur" min="1" max="11" step="2" value="7"><output></output></div>
+    <h3 style="margin-top:12px">Threshold</h3>
+    <div class="sl"><label id="thrLbl">Saturation min</label><input type="range" id="vThr" min="0.1" max="0.9" step="0.01" value="0.45"><output></output></div>
+    <div id="synthCtl">
+      <h3 style="margin-top:12px">Synthetic track</h3>
+      <div class="row"><button class="btn on" id="autoTrack">Auto-move track</button><button class="btn" id="padBtn">Show landing pad</button></div>
+      <div class="sl"><label>Track angle (°)</label><input type="range" id="vTh" min="-40" max="40" step="1" value="15"><output></output></div>
+      <div class="sl"><label>Track offset (px)</label><input type="range" id="vD" min="-35" max="35" step="1" value="10"><output></output></div>
+    </div>
+  </div>
+</section>
+
+<!-- ================= IMU ================= -->
+<section id="imu">
+  <div class="card">
+    <h3>Inertial pipeline</h3>
+    <div class="pipe" id="iPipe">
+      <span class="chip">Accel</span><span class="arr">→</span>
+      <span class="chip">FFT peak search</span><span class="arr">→</span>
+      <span class="chip t on" data-k="notch">Auto notch</span><span class="arr">→</span>
+      <span class="chip t on" data-k="lpf">Low-pass</span><span class="arr">→</span>
+      <span class="chip">roll = atan2</span><span class="arr">→</span>
+      <span class="chip">⊕ Gyro (∫)</span><span class="arr">→</span>
+      <span class="chip">Complementary / Kalman</span>
+    </div>
+    <div class="row" style="margin-top:10px">
+      <button class="btn pri" id="imuStart">Start phone sensors</button>
+      <button class="btn" id="imuEsp">ESP32 + MPU6050 (USB)</button>
+      <button class="btn" id="imuRec">Record 20 s CSV</button>
+      <button class="btn" id="gyroReset">Reset gyro</button>
+      <button class="btn on" id="lpIIR">IIR low-pass</button>
+      <button class="btn" id="lpFIR">FIR low-pass</button>
+    </div>
+    <p class="hint">Hold the phone flat and tilt it left/right (roll). Put it on a running fan or vibrating motor, or inject vibration below. The FFT finds the peak and the notch filter moves to it on its own.</p>
+    <p class="msg" id="iMsg"></p>
+  </div>
+  <div class="cols">
+    <div class="card">
+      <h3>Roll angle</h3>
+      <canvas class="plot" id="pRoll"></canvas>
+      <div class="legend">
+        <span id="lgTrue"><em style="background:#fff"></em>true (sim)</span>
+        <span><em style="background:#ff6b6b"></em>accel raw</span>
+        <span><em style="background:#4f8cff"></em>accel filtered</span>
+        <span><em style="background:#ffb020"></em>gyro only</span>
+        <span><em style="background:#2fbf71"></em>complementary</span>
+        <span><em style="background:#c77dff"></em>Kalman</span>
+      </div>
+    </div>
+    <div class="card">
+      <h3>Drone attitude</h3>
+      <canvas class="plot" id="pAtt"></canvas>
+      <div class="legend"><span><em style="background:#ff6b6b"></em>raw accel</span><span><em style="background:#2fbf71"></em>fused estimate</span></div>
+    </div>
+  </div>
+  <div class="card">
+    <h3>Accelerometer spectrum (FFT)</h3>
+    <canvas class="plot" id="pSpec"></canvas>
+    <div class="legend"><span><em style="background:#ff6b6b"></em>before</span><span><em style="background:#4f8cff"></em>after notch + LPF</span><span><em style="background:#ffd23f"></em>detected peak / notch</span></div>
+    <div class="stats" style="margin-top:8px">
+      <div class="stat"><i>Sample rate</i><b id="iFs">–</b></div>
+      <div class="stat"><i>Vibration peak</i><b id="iPeak">–</b></div>
+      <div class="stat"><i>Accel roll noise raw → filtered</i><b id="iNoise">–</b></div>
+      <div class="stat"><i>Gyro-only drift</i><b id="iDrift">–</b></div>
+      <div class="stat"><i>Low-pass delay @1 Hz</i><b id="iDelay">–</b></div>
+    </div>
+  </div>
+  <div class="card">
+    <h3>Inject noise</h3>
+    <div class="sl"><label>Vibration (m/s²)</label><input type="range" id="iVibA" min="0" max="6" step="0.1" value="0"><output></output></div>
+    <div class="sl"><label>Vibration freq (Hz)</label><input type="range" id="iVibF" min="3" max="200" step="0.5" value="18"><output></output></div>
+    <div class="sl"><label>Gyro bias (°/s)</label><input type="range" id="iBias" min="0" max="5" step="0.1" value="1.5"><output></output></div>
+    <div class="sl"><label>Extra accel noise</label><input type="range" id="iNz" min="0" max="2" step="0.05" value="0"><output></output></div>
+    <h3 style="margin-top:12px">Tune filters</h3>
+    <div class="sl"><label>LPF cutoff (Hz)</label><input type="range" id="iFc" min="0.5" max="10" step="0.5" value="3"><output></output></div>
+    <div class="sl"><label>Notch Q</label><input type="range" id="iQ" min="2" max="30" step="1" value="8"><output></output></div>
+    <div class="sl"><label>Complementary α</label><input type="range" id="iAlpha" min="0.8" max="0.995" step="0.005" value="0.98"><output></output></div>
+    <div id="simCtl">
+      <h3 style="margin-top:12px">Simulated motion</h3>
+      <div class="row"><button class="btn on" id="autoRoll">Auto motion</button></div>
+      <div class="sl"><label>Manual tilt (°)</label><input type="range" id="iTilt" min="-40" max="40" step="1" value="0"><output></output></div>
+    </div>
+  </div>
+</section>
+
+<!-- ================= ALTITUDE ================= -->
+<section id="alt">
+  <div class="card">
+    <h3>Altitude pipeline</h3>
+    <div class="pipe" id="aPipe">
+      <span class="chip">Height sensor</span><span class="arr">→</span>
+      <span class="chip t on" data-k="median">Median (7)</span><span class="arr">→</span>
+      <span class="chip t" data-k="ma">Moving avg (15)</span><span class="arr">→</span>
+      <span class="chip t on" data-k="kal">1D Kalman</span><span class="arr">→</span>
+      <span class="chip">Height</span>
+    </div>
+    <p class="hint">Simulated take-off, hover and landing, looping. Tap "Spike burst" to throw false readings at it.</p>
+  </div>
+  <div class="card">
+    <canvas class="plot" id="pAlt" style="height:230px"></canvas>
+    <div class="legend"><span><em style="background:#fff"></em>true</span><span><em style="background:#ff6b6b"></em>raw sensor</span><span><em style="background:#2fbf71"></em>filtered output</span></div>
+    <div class="stats" style="margin-top:8px">
+      <div class="stat"><i>RMSE raw → filtered</i><b id="aRmse">–</b></div>
+      <div class="stat"><i>SNR raw → filtered</i><b id="aSnr">–</b></div>
+      <div class="stat"><i>Phase</i><b id="aPh">–</b></div>
+    </div>
+  </div>
+  <div class="card">
+    <div class="row"><button class="btn pri" id="aBurst">Spike burst</button></div>
+    <div class="sl"><label>Noise σ (cm)</label><input type="range" id="aSig" min="0" max="10" step="0.5" value="3"><output></output></div>
+    <div class="sl"><label>Spike rate %</label><input type="range" id="aSp" min="0" max="15" step="0.5" value="2"><output></output></div>
+    <div class="sl"><label>Spike size (cm)</label><input type="range" id="aSz" min="10" max="80" step="5" value="45"><output></output></div>
+  </div>
+</section>
+
+<!-- ================= FLIGHT ================= -->
+<section id="flight">
+  <div class="card">
+    <h3>Closed-loop flight: two drones, same noisy camera</h3>
+    <p class="hint" style="margin-top:0">A competition-style track of straight segments and corners. The yellow drone steers from the raw threshold; the blue drone runs the full DSP chain (median, morphology, low-pass). Both see the same noise level, with fresh random noise on every frame.</p>
+    <canvas class="plot" id="pFly" style="height:200px"></canvas>
+    <h3 style="margin-top:10px">Steering command (yaw rate)</h3>
+    <canvas class="plot" id="pSteer" style="height:120px"></canvas>
+    <div class="legend"><span><em style="background:#ffd23f"></em>raw drone</span><span><em style="background:#4f8cff"></em>DSP drone</span></div>
+    <div class="grid2" style="margin-top:8px">
+      <div class="panel"><canvas id="fR" width="320" height="240"></canvas><span style="color:#ffd23f">raw drone camera</span></div>
+      <div class="panel"><canvas id="fF" width="320" height="240"></canvas><span style="color:#8fb6ff">DSP drone camera</span></div>
+    </div>
+    <div class="stats" style="margin-top:8px">
+      <div class="stat"><i>Raw drone</i><b id="fsR">–</b></div>
+      <div class="stat"><i>DSP drone</i><b id="fsF">–</b></div>
+      <div class="stat"><i>Steering jerk raw → DSP</i><b id="fJ">–</b></div>
+      <div class="stat"><i>Flight time</i><b id="fT">–</b></div>
+    </div>
+  </div>
+  <div class="card">
+    <div class="row"><button class="btn pri" id="fGo">Restart flight</button><button class="btn" id="fFast">2× speed</button></div>
+    <div class="sl"><label>Gaussian σ</label><input type="range" id="fSig" min="0" max="0.3" step="0.01" value="0.12"><output></output></div>
+    <div class="sl"><label>Salt &amp; pepper %</label><input type="range" id="fSp" min="0" max="25" step="1" value="12"><output></output></div>
+    <div class="sl"><label>Uneven lighting</label><input type="range" id="fLight" min="0" max="1.2" step="0.05" value="0.7"><output></output></div>
+    <div class="sl"><label>Corner sharpness</label><input type="range" id="fA" min="10" max="70" step="5" value="40"><output></output></div>
+  </div>
+</section>
+
+<!-- ================= DRONE MODE ================= -->
+<section id="drone">
+  <div class="card">
+    <h3>Drone mode: camera + IMU together</h3>
+    <p class="hint" style="margin-top:0">Hold the phone flat, screen up, back camera looking down at the tape, top edge = drone nose. Walk along the tape; tilt to roll/pitch. Uses the track colour and threshold from the Camera tab.</p>
+    <div class="row"><button class="btn pri" id="dStart">Start drone mode</button><button class="btn" id="dNoise">Inject noise</button></div>
+    <p class="msg" id="dMsg"></p>
+    <div class="grid2">
+      <div class="panel"><canvas id="dCam" width="320" height="240"></canvas><span>camera + DSP line</span></div>
+      <div class="panel"><canvas id="dMask" width="320" height="240"></canvas><span>filtered mask</span></div>
+    </div>
+    <canvas class="plot" id="dHor" style="height:200px;margin-top:8px"></canvas>
+    <h3 style="margin-top:10px">Steering command</h3>
+    <div class="steer"><div id="dSteer"></div></div>
+    <div class="stats" style="margin-top:8px">
+      <div class="stat"><i>Status</i><b id="dStat">–</b></div>
+      <div class="stat"><i>Heading θ (camera)</i><b id="dTh">–</b></div>
+      <div class="stat"><i>Offset d</i><b id="dD">–</b></div>
+      <div class="stat"><i>Roll (fused)</i><b id="dRoll">–</b></div>
+      <div class="stat"><i>Pitch (fused)</i><b id="dPitch">–</b></div>
+      <div class="stat"><i>Vibration peak</i><b id="dVib">–</b></div>
+    </div>
+  </div>
+</section>
+
+<!-- ================= NAVIGATE (optical-flow localisation) ================= -->
+<section id="nav">
+  <div class="card">
+    <h3>Navigate: the phone finds its own position and gets directions</h3>
+    <div class="pipe" id="nPipe">
+      <span class="chip">Down camera</span><span class="arr">→</span>
+      <span class="chip t on" data-k="win">Hann window</span><span class="arr">→</span>
+      <span class="chip">2D FFT phase correlation</span><span class="arr">→</span>
+      <span class="chip t on" data-k="gate">Quality gate</span><span class="arr">→</span>
+      <span class="chip t on" data-k="med">Median flow</span><span class="arr">→</span>
+      <span class="chip t on" data-k="lpf">Low-pass</span><span class="arr">→</span>
+      <span class="chip">⊕ Gyro heading</span><span class="arr">→</span>
+      <span class="chip t on" data-k="bias">Gyro bias cal</span><span class="arr">→</span>
+      <span class="chip t on" data-k="comp">Compass fusion</span><span class="arr">→</span>
+      <span class="chip">Map + A* route</span>
+    </div>
+    <div class="row" style="margin-top:10px">
+      <button class="btn on" data-nsrc="sim">Simulate</button>
+      <button class="btn" data-nsrc="cam">Live phone (camera)</button>
+      <button class="btn" data-nsrc="espsim">Simulate ESP32</button>
+      <button class="btn" data-nsrc="esp">ESP32 via Bluetooth</button>
+    </div>
+    <div class="row">
+      <button class="btn" id="nRoomTable">Table 1.5 × 1 m</button>
+      <button class="btn" id="nRoomRoom">Room 5 × 4 m</button>
+      <label class="hint" style="display:flex;align-items:center;gap:6px">W <input id="nW" type="number" min="1" max="20" step="0.5" value="1.5" style="width:56px"> m</label>
+      <label class="hint" style="display:flex;align-items:center;gap:6px">H <input id="nH" type="number" min="1" max="20" step="0.5" value="1" style="width:56px"> m</label>
+      <button class="btn" id="nRoomApply">Apply size</button>
+      <button class="btn" id="nObsMode">Edit obstacles</button>
+      <button class="btn" id="nObsClear">Clear obstacles</button>
+      <button class="btn" id="nA4">4th anchor (far corner)</button>
+    </div>
+    <div class="row">
+      <button class="btn pri" id="nStart">Set start</button>
+      <button class="btn" id="nCal">Calibrate 50 cm</button>
+      <button class="btn" id="nGoal">I'm at the goal</button>
+      <button class="btn on" id="nVoice">Voice on</button>
+      <button class="btn" id="nFlip">Flip sideways</button>
+    </div>
+    <p class="hint" id="nHint">Simulation: a virtual phone flies over a textured floor and follows the app's directions. White = true path, blue = filtered estimate, red = raw estimate.</p>
+    <p class="msg" id="nMsg"></p>
+  </div>
+  <div class="card">
+    <div style="display:flex;gap:10px;align-items:center">
+      <canvas id="nArrow" width="220" height="220" style="width:110px;height:110px;background:#0b101a;border-radius:14px;flex:none"></canvas>
+      <div><div id="nInstr" style="font-size:22px;font-weight:700">Tap Set start</div><div class="hint" id="nSub">–</div></div>
+    </div>
+    <canvas class="plot" id="nMap" style="height:300px;margin-top:10px;touch-action:none"></canvas>
+    <div class="legend"><span><em style="background:#fff"></em>true path (sim)</span><span><em style="background:#4f8cff"></em>filtered estimate</span><span><em style="background:#ff6b6b"></em>raw estimate (dots in ESP32 mode)</span><span><em style="background:#ffd23f"></em>route to goal</span><span><em style="background:#8a96b3"></em>obstacle</span></div>
+  </div>
+  <div class="card">
+    <div class="grid2">
+      <div class="panel"><canvas id="nCam" width="256" height="256"></canvas><span>camera patch + flow</span></div>
+      <div class="panel"><canvas id="nCorr" width="256" height="256"></canvas><span>phase-correlation peak</span></div>
+    </div>
+    <div class="stats" style="margin-top:8px">
+      <div class="stat"><i>Position (filtered)</i><b id="nPos">–</b></div>
+      <div class="stat"><i>Heading</i><b id="nHead">–</b></div>
+      <div class="stat"><i>Texture quality</i><b id="nQ">–</b></div>
+      <div class="stat"><i>Error raw → filtered</i><b id="nErr">–</b></div>
+      <div class="stat"><i>Distance travelled</i><b id="nDist">–</b></div>
+      <div class="stat"><i>Processing</i><b id="nMs">–</b></div>
+    </div>
+  </div>
+  <div class="card">
+    <h3>Drift test (simulation, 5 runs)</h3>
+    <div class="row"><button class="btn" id="nTrials">Run 5 trials</button></div>
+    <div id="nTrialOut" class="hint">Each run flies start → goal around the obstacle. Error is the true distance from the goal when the app says "Arrived".</div>
+    <h3 style="margin-top:12px">Simulation settings</h3>
+    <div class="sl"><label>Camera noise σ</label><input type="range" id="nNoise" min="0" max="0.3" step="0.01" value="0.08"><output></output></div>
+    <div class="sl"><label>Gyro bias (°/s)</label><input type="range" id="nBias" min="0" max="3" step="0.1" value="1.0"><output></output></div>
+    <div class="sl"><label>Low-pass α</label><input type="range" id="nAlpha" min="0.1" max="1" step="0.05" value="0.5"><output></output></div>
+    <p class="hint"><button class="btn" id="nToBeacon">ESP32 filter switches + calibration</button></p>
+  </div>
+</section>
+
+<!-- ================= BEACON (ESP32) ================= -->
+<section id="beacon">
+  <div class="card">
+    <h3>ESP32 signal filters (used by Navigate)</h3>
+    <p class="hint" style="margin-top:0">These switches control the ESP32 chain in Navigate. Firmware is in <code>hardware/esp32_beacon/</code>. <button class="btn" id="bBack">← Back to Navigate</button></p>
+    <div class="pipe" id="bPipe">
+      <span class="chip">3 ESP32 anchors</span><span class="arr">→</span>
+      <span class="chip">RSSI (dBm)</span><span class="arr">→</span>
+      <span class="chip t on" data-k="median">Median 5</span><span class="arr">→</span>
+      <span class="chip t on" data-k="kal">Kalman (RSSI)</span><span class="arr">→</span>
+      <span class="chip">Path-loss → distance</span><span class="arr">→</span>
+      <span class="chip">Trilateration</span><span class="arr">→</span>
+      <span class="chip t on" data-k="wls">Weighted LS</span><span class="arr">→</span>
+      <span class="chip t on" data-k="pkf">Kalman (position)</span><span class="arr">→</span>
+      <span class="chip">Steer to goal</span>
+    </div>
+    <div class="row" style="margin-top:10px">
+      <button class="btn on" data-bsrc="sim">Simulate</button>
+      <button class="btn" data-bsrc="ble">ESP32 via Bluetooth</button>
+      <button class="btn" data-bsrc="usb">ESP32 via USB (laptop)</button>
+      <button class="btn" data-bsrc="csv">Load log (CSV)</button>
+      <input type="file" id="bCsv" accept=".csv,.txt" hidden>
+    </div>
+    <p class="hint" id="bHint">Simulated room 5 m × 4 m with anchors A1, A2, A3. Red drone steers using raw trilateration, blue drone uses the filtered chain; both get the same kind of noisy signal. Tap the map to move the goal.</p>
+    <p class="msg" id="bMsg"></p>
+  </div>
+  <div class="card">
+    <canvas class="plot" id="bMap" style="height:320px;touch-action:none"></canvas>
+    <div class="legend"><span><em style="background:#fff"></em>true path</span><span><em style="background:#ff6b6b"></em>raw estimate</span><span><em style="background:#4f8cff"></em>filtered estimate</span><span><em style="background:#ffd23f"></em>goal</span><span><em style="background:#2fbf71"></em>anchors + range circles</span></div>
+    <div class="row" style="margin-top:8px"><button class="btn pri" id="bGo">Restart flight</button></div>
+    <div class="stats">
+      <div class="stat"><i>Position error raw → filtered</i><b id="bErr">–</b></div>
+      <div class="stat"><i>Raw drone</i><b id="bR">–</b></div>
+      <div class="stat"><i>Filtered drone</i><b id="bF">–</b></div>
+      <div class="stat"><i>Latest RSSI A1 / A2 / A3</i><b id="bRssi">–</b></div>
+      <div class="stat"><i>Samples</i><b id="bN">–</b></div>
+    </div>
+  </div>
+  <div class="card">
+    <h3>Calibration: RSSI vs distance (path-loss fit)</h3>
+    <canvas class="plot" id="bCal" style="height:180px"></canvas>
+    <p class="hint" id="bFit">Collecting samples…</p>
+  </div>
+  <div class="card">
+    <h3>Signal model and filters</h3>
+    <div class="sl"><label>RSSI at 1 m, P0 (dBm)</label><input type="range" id="bP0" min="-60" max="-35" step="1" value="-45"><output></output></div>
+    <div class="sl"><label>Path-loss exponent n</label><input type="range" id="bNexp" min="1.6" max="4" step="0.1" value="2.2"><output></output></div>
+    <div class="sl"><label>Shadowing noise σ (dB)</label><input type="range" id="bSig" min="0" max="8" step="0.5" value="4"><output></output></div>
+    <div class="sl"><label>Multipath fades %</label><input type="range" id="bSpk" min="0" max="25" step="1" value="6"><output></output></div>
+    <p class="hint">Model: RSSI = P0 − 10·n·log10(d) + shadowing + occasional deep fades. In live mode, set P0 and n from your calibration fit.</p>
+  </div>
+</section>
+
+<!-- ================= RESULTS ================= -->
+<section id="results">
+  <div class="card">
+    <h3>Results: every comparison from the proposal</h3>
+    <p class="hint" style="margin-top:0">Fixed random seed, so every run gives the same numbers. Each experiment uses identical noisy inputs for every filter and changes one thing at a time. A laptop browser runs it faster than a phone.</p>
+    <div class="row"><button class="btn pri" id="rAll">Run all experiments</button><button class="btn" id="rCopy">Copy tables</button><button class="btn" id="rCsv">Download CSV</button></div>
+    <div class="prog"><div id="rProg"></div></div>
+    <p class="hint" id="rStat"></p>
+  </div>
+  <div class="card"><h3>E1 · Vision: filter vs filter, three noise types</h3><div class="row"><button class="btn" data-run="e1">Run E1</button></div><div id="e1"></div></div>
+  <div class="card"><h3>E2 · Vision: accuracy vs noise level</h3><div class="row"><button class="btn" data-run="e2">Run E2</button></div><canvas class="plot" id="e2c" style="display:none"></canvas><div id="e2"></div></div>
+  <div class="card"><h3>E3 · Inertial: filters, FIR vs IIR, fusion</h3><div class="row"><button class="btn" data-run="e3">Run E3</button></div><canvas class="plot" id="e3c" style="display:none"></canvas><div id="e3"></div></div>
+  <div class="card"><h3>E4 · Altitude: spike and noise removal</h3><div class="row"><button class="btn" data-run="e4">Run E4</button></div><div id="e4"></div></div>
+  <div class="card"><h3>E5 · Closed-loop flight</h3><div class="row"><button class="btn" data-run="e5">Run E5</button></div><div id="e5"></div></div>
+</section>
+
+<script>
+"use strict";
+// ---------- helpers ----------
+const $ = id => document.getElementById(id);
+const W = 160, H = 120, XC = (W - 1) / 2, YC = (H - 1) / 2;
+const D2R = Math.PI / 180, R2D = 180 / Math.PI;
+let RNG = Math.random;
+function rand() { return RNG(); }
+function setSeed(a) { RNG = function () { a |= 0; a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
+function clearSeed() { RNG = Math.random; }
+function randnM() { let u = 0, v = 0; while (!u) u = Math.random(); while (!v) v = Math.random(); return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v); }
+function randn() { let u = 0, v = 0; while (!u) u = rand(); while (!v) v = rand(); return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v); }
+const val = id => parseFloat($(id).value);
+function std(a) { if (a.length < 2) return 0; const m = a.reduce((s, x) => s + x, 0) / a.length; return Math.sqrt(a.reduce((s, x) => s + (x - m) ** 2, 0) / a.length); }
+function rms(a) { return a.length ? Math.sqrt(a.reduce((s, x) => s + x * x, 0) / a.length) : 0; }
+document.querySelectorAll('.sl input').forEach(inp => {
+  const o = inp.parentElement.querySelector('output');
+  const upd = () => o.textContent = inp.value; inp.addEventListener('input', upd); upd();
+});
+function chips(pipeId) {
+  const st = {};
+  document.querySelectorAll('#' + pipeId + ' .chip.t').forEach(c => {
+    st[c.dataset.k] = c.classList.contains('on');
+    c.onclick = () => { c.classList.toggle('on'); st[c.dataset.k] = c.classList.contains('on'); };
+  });
+  return st;
+}
+function setBadge(txt, cls) { const b = $('badge'); b.textContent = txt; b.className = 'badge ' + (cls || ''); }
+function sizeCanvas(c) {
+  const r = c.getBoundingClientRect(), d = Math.min(window.devicePixelRatio || 1, 2);
+  if (c.width !== Math.round(r.width * d) || c.height !== Math.round(r.height * d)) { c.width = Math.round(r.width * d); c.height = Math.round(r.height * d); }
+  return d;
+}
+
+// ---------- tabs ----------
+let tab = 'vision';
+document.querySelectorAll('nav button').forEach(b => b.onclick = () => {
+  document.querySelectorAll('nav button').forEach(x => x.classList.toggle('on', x === b));
+  document.querySelectorAll('section').forEach(s => s.classList.toggle('on', s.id === b.dataset.tab));
+  tab = b.dataset.tab;
+  if (tab === 'flight' && !fly.started) flyReset();
+});
+
+// ---------- image DSP ----------
+const COLORS = { red: [0.8, 0.15, 0.1], blue: [0.1, 0.25, 0.8], green: [0.1, 0.6, 0.2], yellow: [0.9, 0.8, 0.1], black: [0.07, 0.07, 0.07] };
+const HUE = { red: [0, 0.06], yellow: [0.15, 0.05], green: [0.33, 0.09], blue: [0.62, 0.09] };
+const BG = [0.55, 0.55, 0.5];
+// tap-to-pick colour: HUE.pick is filled in when the user taps the track in panel 1
+const PICK = { rgb: null, vmin: 0.15 };
+function rgb2hsv(r, g, b) {
+  const mx = Math.max(r, g, b), mn = Math.min(r, g, b), dd = mx - mn;
+  let h = 0;
+  if (dd > 0) { if (mx === r) h = ((g - b) / dd) % 6; else if (mx === g) h = (b - r) / dd + 2; else h = (r - g) / dd + 4; h /= 6; if (h < 0) h += 1; }
+  return [h, mx > 0 ? dd / mx : 0, mx];
+}
+
+function paint(onFn, col) {
+  const img = new Float32Array(W * H * 3);
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+    const c = onFn(x, y) ? col : BG, i = (y * W + x) * 3;
+    img[i] = c[0]; img[i + 1] = c[1]; img[i + 2] = c[2];
+  }
+  return img;
+}
+function synthFrame(thDeg, d, col) {
+  const c = Math.cos(thDeg * D2R), s = Math.sin(thDeg * D2R), rho = XC * c + YC * s + d;
+  return paint((x, y) => Math.abs(x * c + y * s - rho) < 6, col);
+}
+function addNoise(src, sig, sp, light, blur) {
+  let img = new Float32Array(src.length);
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+    const g = 1 - light / 2 + light * x / W, i = (y * W + x) * 3;
+    img[i] = src[i] * g; img[i + 1] = src[i + 1] * g; img[i + 2] = src[i + 2] * g;
+  }
+  if (blur > 1) {
+    const out = new Float32Array(img.length), h = (blur - 1) / 2;
+    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) for (let k = 0; k < 3; k++) {
+      let s = 0; for (let j = -h; j <= h; j++) { const xx = Math.min(W - 1, Math.max(0, x + j)); s += img[(y * W + xx) * 3 + k]; }
+      out[(y * W + x) * 3 + k] = s / blur;
+    }
+    img = out;
+  }
+  for (let i = 0; i < img.length; i++) {
+    const r = rand();
+    if (r < sp / 2) img[i] = 0;
+    else if (r > 1 - sp / 2) img[i] = 1;
+    else img[i] = Math.min(1, Math.max(0, img[i] + sig * randn()));
+  }
+  return img;
+}
+function threshold(img, colName, thr) {
+  const m = new Uint8Array(W * H);
+  for (let p = 0; p < W * H; p++) {
+    const r = img[p * 3], g = img[p * 3 + 1], b = img[p * 3 + 2];
+    const mx = Math.max(r, g, b), mn = Math.min(r, g, b), dd = mx - mn, v = mx, s = mx > 0 ? dd / mx : 0;
+    if (colName === 'black') { m[p] = v < thr ? 1 : 0; continue; }
+    let h = 0;
+    if (dd > 0) { if (mx === r) h = ((g - b) / dd) % 6; else if (mx === g) h = (b - r) / dd + 2; else h = (r - g) / dd + 4; h /= 6; if (h < 0) h += 1; }
+    const [hc, hw] = HUE[colName];
+    let dh = Math.abs(h - hc); dh = Math.min(dh, 1 - dh);
+    m[p] = (dh < hw && s > thr && v > (colName === 'pick' ? PICK.vmin : 0.15)) ? 1 : 0;
+  }
+  return m;
+}
+function med9(a) {
+  const sw = (i, j) => { if (a[i] > a[j]) { const t = a[i]; a[i] = a[j]; a[j] = t; } };
+  sw(1,2);sw(4,5);sw(7,8);sw(0,1);sw(3,4);sw(6,7);sw(1,2);sw(4,5);sw(7,8);sw(0,3);sw(5,8);sw(4,7);sw(3,6);sw(1,4);sw(2,5);sw(4,7);sw(4,2);sw(6,4);sw(4,2);
+  return a[4];
+}
+const M9 = new Float32Array(9);
+function medianImg(img) {
+  const o = new Float32Array(img.length);
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) for (let k = 0; k < 3; k++) {
+    let n = 0;
+    for (let dy = -1; dy <= 1; dy++) { const yy = y + dy < 0 ? 0 : y + dy >= H ? H - 1 : y + dy;
+      for (let dx = -1; dx <= 1; dx++) { const xx = x + dx < 0 ? 0 : x + dx >= W ? W - 1 : x + dx; M9[n++] = img[(yy * W + xx) * 3 + k]; } }
+    o[(y * W + x) * 3 + k] = med9(M9);
+  }
+  return o;
+}
+function gaussImg(img) {
+  const k = [1, 4, 6, 4, 1], tmp = new Float32Array(img.length), o = new Float32Array(img.length);
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) for (let c = 0; c < 3; c++) {
+    let s = 0; for (let j = -2; j <= 2; j++) { const xx = Math.min(W - 1, Math.max(0, x + j)); s += k[j + 2] * img[(y * W + xx) * 3 + c]; }
+    tmp[(y * W + x) * 3 + c] = s / 16;
+  }
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) for (let c = 0; c < 3; c++) {
+    let s = 0; for (let j = -2; j <= 2; j++) { const yy = Math.min(H - 1, Math.max(0, y + j)); s += k[j + 2] * tmp[(yy * W + x) * 3 + c]; }
+    o[(y * W + x) * 3 + c] = s / 16;
+  }
+  return o;
+}
+function median5(m) {
+  const I = new Int32Array((W + 1) * (H + 1));
+  for (let y = 0; y < H; y++) { let rs = 0; for (let x = 0; x < W; x++) { rs += m[y * W + x]; I[(y + 1) * (W + 1) + x + 1] = I[y * (W + 1) + x + 1] + rs; } }
+  const o = new Uint8Array(W * H);
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+    const x0 = Math.max(0, x - 2), x1 = Math.min(W, x + 3), y0 = Math.max(0, y - 2), y1 = Math.min(H, y + 3);
+    const s = I[y1 * (W + 1) + x1] - I[y0 * (W + 1) + x1] - I[y1 * (W + 1) + x0] + I[y0 * (W + 1) + x0];
+    o[y * W + x] = 2 * s > (x1 - x0) * (y1 - y0) ? 1 : 0;
+  }
+  return o;
+}
+const DISK = []; for (let dy = -2; dy <= 2; dy++) for (let dx = -2; dx <= 2; dx++) if (dx * dx + dy * dy <= 5) DISK.push([dx, dy]);
+const SQ3 = []; for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) SQ3.push([dx, dy]);
+function morph(m, erode, se = DISK) {
+  const o = new Uint8Array(W * H);
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+    let r = erode ? 1 : 0;
+    for (const [dx, dy] of se) {
+      const xx = x + dx, yy = y + dy;
+      if (xx < 0 || yy < 0 || xx >= W || yy >= H) continue;
+      const v = m[yy * W + xx];
+      if (erode && !v) { r = 0; break; }
+      if (!erode && v) { r = 1; break; }
+    }
+    o[y * W + x] = r;
+  }
+  return o;
+}
+const openM = m => morph(morph(m, true), false);
+const closeM = m => morph(morph(m, false), true);
+// thin tracks (a cable is ~2 px wide at 160x120): any opening erases them, so only close
+// with a 3x3 square to bridge gaps; the biggest-blob step removes the speckle instead
+const closeThin = m => morph(morph(m, false, SQ3), true, SQ3);
+function roiBottom(m) {               // keep only the bottom half (the ground just ahead of the drone)
+  const o = new Uint8Array(m); o.fill(0, 0, (H >> 1) * W); return o;
+}
+const BL = new Int32Array(W * H), STK = new Int32Array(W * H);
+function biggestBlob(m) {             // 8-connected labelling, keep the largest component
+  BL.fill(0); let lab = 0, best = 0, bestN = 0;
+  for (let p0 = 0; p0 < W * H; p0++) {
+    if (!m[p0] || BL[p0]) continue;
+    lab++; let sp = 0, n = 0; STK[sp++] = p0; BL[p0] = lab;
+    while (sp) {
+      const p = STK[--sp], x = p % W, y = (p - x) / W; n++;
+      for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+        const xx = x + dx, yy = y + dy; if (xx < 0 || yy < 0 || xx >= W || yy >= H) continue;
+        const q = yy * W + xx; if (m[q] && !BL[q]) { BL[q] = lab; STK[sp++] = q; }
+      }
+    }
+    if (n > bestN) { bestN = n; best = lab; }
+  }
+  const o = new Uint8Array(W * H); if (best) for (let p = 0; p < W * H; p++) o[p] = BL[p] === best ? 1 : 0;
+  return o;
+}
+function edges(m) {
+  const e = new Uint8Array(W * H);
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+    const p = y * W + x; if (!m[p]) continue;
+    if (x === 0 || y === 0 || x === W - 1 || y === H - 1) continue;
+    if (!m[p - 1] || !m[p + 1] || !m[p - W] || !m[p + W]) e[p] = 1;
+  }
+  return e;
+}
+const NT = 180, RMAX = Math.ceil(Math.hypot(W, H)), NR = 2 * RMAX + 1;
+const CS = new Float32Array(NT), SN = new Float32Array(NT);
+for (let t = 0; t < NT; t++) { CS[t] = Math.cos((t - 90) * D2R); SN[t] = Math.sin((t - 90) * D2R); }
+function hough(e) {
+  const acc = new Int32Array(NT * NR); let n = 0;
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) if (e[y * W + x]) {
+    n++; for (let t = 0; t < NT; t++) acc[t * NR + Math.round(x * CS[t] + y * SN[t]) + RMAX]++;
+  }
+  if (n < 20) return null;
+  const pk = []; let first = 0;
+  for (let k = 0; k < 6; k++) {
+    let bi = 0, bv = 0; for (let i = 0; i < acc.length; i++) if (acc[i] > bv) { bv = acc[i]; bi = i; }
+    if (k === 0) first = bv; if (bv < 0.3 * first || bv < 8) break;
+    const t = Math.floor(bi / NR), r = bi % NR; pk.push([t - 90, r - RMAX]);
+    for (let dt = -5; dt <= 5; dt++) for (let dr = -5; dr <= 5; dr++) {
+      const tt = t + dt, rr = r + dr; if (tt >= 0 && tt < NT && rr >= 0 && rr < NR) acc[tt * NR + rr] = 0;
+    }
+  }
+  if (!pk.length) return null;
+  const t0 = pk[0][0]; let ts = [], rs = [];
+  for (let [t, r] of pk) {
+    if (t - t0 > 90) { t -= 180; r = -r; } else if (t0 - t > 90) { t += 180; r = -r; }
+    if (Math.abs(t - t0) < 5) { ts.push(t); rs.push(r); }
+  }
+  let th = ts.reduce((a, b) => a + b, 0) / ts.length, rho = (Math.min(...rs) + Math.max(...rs)) / 2;
+  if (th >= 90) { th -= 180; rho = -rho; } if (th < -90) { th += 180; rho = -rho; }
+  return { th, rho, d: rho - (XC * Math.cos(th * D2R) + YC * Math.sin(th * D2R)) };
+}
+function pipeline(img, colName, thr, o = {}) {
+  const raw = threshold(img, colName, thr);
+  let pre = img;
+  if (o.med) pre = medianImg(pre);
+  if (o.gauss) pre = gaussImg(pre);
+  let m = (o.med || o.gauss) ? threshold(pre, colName, thr) : raw;
+  if (o.morph) m = o.thin ? closeThin(m) : openM(closeM(m));
+  if (o.roi) m = roiBottom(m);
+  if (o.blob) m = biggestBlob(m);
+  const e = edges(m);
+  let est = hough(e);
+  if (est && o.blob) est = refineLine(m, est);
+  return { raw, mask: m, edge: e, est };
+}
+// least-squares (principal axis) fit on mask pixels within 10 px of the Hough line:
+// Hough finds the line robustly, the fit removes its 1° / 1 px quantisation
+function refineLine(m, est) {
+  const c = Math.cos(est.th * D2R), s = Math.sin(est.th * D2R);
+  let n = 0, sx = 0, sy = 0, sxx = 0, syy = 0, sxy = 0;
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) if (m[y * W + x] && Math.abs(x * c + y * s - est.rho) < 10) {
+    n++; sx += x; sy += y; sxx += x * x; syy += y * y; sxy += x * y;
+  }
+  if (n < 20) return est;
+  const mx = sx / n, my = sy / n, cxx = sxx / n - mx * mx, cyy = syy / n - my * my, cxy = sxy / n - mx * my;
+  let th = 0.5 * Math.atan2(2 * cxy, cxx - cyy) / D2R - 90;      // normal = principal direction - 90°
+  while (th - est.th > 90) th -= 180; while (est.th - th > 90) th += 180;
+  if (Math.abs(th - est.th) > 6) return est;                    // fit disagrees: keep the Hough answer
+  let rho = mx * Math.cos(th * D2R) + my * Math.sin(th * D2R);
+  if (th >= 90) { th -= 180; rho = -rho; } if (th < -90) { th += 180; rho = -rho; }
+  return { th, rho, d: rho - (XC * Math.cos(th * D2R) + YC * Math.sin(th * D2R)) };
+}
+
+// ---------- drawing ----------
+const off = document.createElement('canvas'); off.width = W; off.height = H;
+const offx = off.getContext('2d');
+const offData = offx.createImageData(W, H);
+function blitRGB(cv, img) {
+  for (let p = 0; p < W * H; p++) { offData.data[p * 4] = img[p * 3] * 255; offData.data[p * 4 + 1] = img[p * 3 + 1] * 255; offData.data[p * 4 + 2] = img[p * 3 + 2] * 255; offData.data[p * 4 + 3] = 255; }
+  offx.putImageData(offData, 0, 0); const c = cv.getContext('2d'); c.imageSmoothingEnabled = false; c.drawImage(off, 0, 0, cv.width, cv.height); return c;
+}
+function blitMask(cv, m, rgb) {
+  for (let p = 0; p < W * H; p++) { const v = m[p]; offData.data[p * 4] = v ? rgb[0] : 12; offData.data[p * 4 + 1] = v ? rgb[1] : 14; offData.data[p * 4 + 2] = v ? rgb[2] : 22; offData.data[p * 4 + 3] = 255; }
+  offx.putImageData(offData, 0, 0); const c = cv.getContext('2d'); c.imageSmoothingEnabled = false; c.drawImage(off, 0, 0, cv.width, cv.height); return c;
+}
+function drawEst(c, est, color, dash) {
+  if (!est) return;
+  const k = c.canvas.width / W, th = est.th * D2R, cs = Math.cos(th), sn = Math.sin(th);
+  c.save(); c.strokeStyle = color; c.lineWidth = 3; c.setLineDash(dash ? [8, 6] : []); c.beginPath();
+  if (Math.abs(cs) > Math.abs(sn)) { c.moveTo(((est.rho) / cs + .5) * k, .5 * k); c.lineTo(((est.rho - (H - 1) * sn) / cs + .5) * k, (H - .5) * k); }
+  else { c.moveTo(.5 * k, (est.rho / sn + .5) * k); c.lineTo((W - .5) * k, ((est.rho - (W - 1) * cs) / sn + .5) * k); }
+  c.stroke(); c.restore();
+}
+
+// ---------- VISION TAB ----------
+const vChip = chips('vPipe');
+let vSrc = 'synth', vCol = 'red', vAuto = true, camStream = null, photoImg = null;
+const vid = $('vid'), grab = document.createElement('canvas'); grab.width = W; grab.height = H;
+const grabx = grab.getContext('2d', { willReadFrequently: true });
+const hist = { raw: [], dsp: [], okR: [], okF: [] };
+let steerF = 0, vT0 = performance.now();
+
+function setNoiseDefaults(cam) {
+  const set = (id, v) => { $(id).value = v; $(id).dispatchEvent(new Event('input')); };
+  if (cam) { set('vSig', 0.02); set('vSp', 0); set('vLight', 0); set('vBlur', 1); set('vThr', vCol === 'black' ? 0.3 : 0.35); }
+  else { set('vSig', 0.10); set('vSp', 8); set('vLight', 0.7); set('vBlur', 7); set('vThr', vCol === 'black' ? 0.3 : 0.45); }
+}
+document.querySelectorAll('[data-src]').forEach(b => b.onclick = async () => {
+  const s = b.dataset.src;
+  if (s === 'photo') { $('photoIn').click(); return; }
+  if (s === 'cam') {
+    try {
+      camStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment', width: { ideal: 640 }, height: { ideal: 480 } }, audio: false });
+      vid.srcObject = camStream; await vid.play();
+    } catch (e) { $('vMsg').textContent = 'Camera blocked here (' + e.name + '). Open the hosted https:// link in Chrome/Safari on your phone, or use Photo.'; return; }
+  } else if (camStream) { camStream.getTracks().forEach(t => t.stop()); camStream = null; }
+  selectSrc(s);
+});
+$('photoIn').onchange = e => {
+  const f = e.target.files[0]; if (!f) return;
+  const im = new Image(); im.onload = () => { photoImg = im; selectSrc('photo'); }; im.src = URL.createObjectURL(f);
+};
+function selectSrc(s) {
+  vSrc = s; $('vMsg').textContent = '';
+  document.querySelectorAll('[data-src]').forEach(x => x.classList.toggle('on', x.dataset.src === s));
+  $('synthCtl').style.display = s === 'synth' ? '' : 'none';
+  $('accBox').style.display = $('truthLeg').style.display = s === 'synth' ? '' : 'none';
+  $('morphChip').textContent = s === 'synth' ? 'Close + Open' : 'Close 3×3 (thin)';
+  vChip.roi = s !== 'synth'; $('roiChip').classList.toggle('on', vChip.roi);   // ROI rejects clutter on real frames
+  setNoiseDefaults(s !== 'synth'); hist.raw = []; hist.dsp = []; hist.okR = []; hist.okF = [];
+}
+document.querySelectorAll('[data-col]').forEach(b => b.onclick = () => {
+  vCol = b.dataset.col; document.querySelectorAll('[data-col]').forEach(x => x.classList.toggle('on', x === b));
+  $('thrLbl').textContent = vCol === 'black' ? 'Darkness max (V)' : 'Saturation min';
+  $('vThr').value = vCol === 'black' ? 0.3 : vCol === 'pick' ? PICK.thr : (vSrc === 'synth' ? 0.45 : 0.35); $('vThr').dispatchEvent(new Event('input'));
+});
+// tap the track in panel 1 → median colour of a 5x5 patch becomes the threshold target
+let vLastImg = null;
+$('c1').addEventListener('click', ev => {
+  if (!vLastImg) return;
+  const r = $('c1').getBoundingClientRect();
+  const cx = Math.floor((ev.clientX - r.left) / r.width * W), cy = Math.floor((ev.clientY - r.top) / r.height * H);
+  // a thin cable covers only a few pixels of the 5x5 patch, so average the 5 most saturated ones
+  const px = [];
+  for (let dy = -2; dy <= 2; dy++) for (let dx = -2; dx <= 2; dx++) {
+    const x = Math.min(W - 1, Math.max(0, cx + dx)), y = Math.min(H - 1, Math.max(0, cy + dy)), i = (y * W + x) * 3;
+    const c = [vLastImg[i], vLastImg[i + 1], vLastImg[i + 2]]; px.push([rgb2hsv(c[0], c[1], c[2])[1], c]);
+  }
+  px.sort((p, q) => q[0] - p[0]);
+  const rgb = [0, 1, 2].map(k => px.slice(0, 5).reduce((a, p) => a + p[1][k], 0) / 5);
+  const [h, s, v] = rgb2hsv(rgb[0], rgb[1], rgb[2]);
+  if (s < 0.2) { $('vMsg').textContent = 'That spot is almost grey (saturation ' + s.toFixed(2) + '). Tap directly on the coloured track, or use Black.'; return; }
+  HUE.pick = [h, 0.04];                                   // ±0.04 hue (≈ ±14°) around the tapped colour
+  PICK.thr = Math.round(Math.min(0.8, Math.max(0.15, 0.6 * s)) * 100) / 100;
+  PICK.vmin = Math.max(0.08, 0.45 * v);
+  PICK.rgb = rgb;
+  $('pickSw').style.background = `rgb(${rgb.map(c => Math.round(255 * c)).join(',')})`;
+  $('pickBtn').hidden = false; $('pickBtn').click();
+  $('vMsg').textContent = `Picked hue ${(360 * h).toFixed(0)}°, saturation ≥ ${PICK.thr}, value ≥ ${PICK.vmin.toFixed(2)}.`;
+});
+$('autoTrack').onclick = () => { vAuto = !vAuto; $('autoTrack').classList.toggle('on', vAuto); };
+
+function grabImage(srcEl, sw, sh) {
+  const tr = W / H; let cw = sw, ch = sw / tr; if (ch > sh) { ch = sh; cw = sh * tr; }
+  grabx.drawImage(srcEl, (sw - cw) / 2, (sh - ch) / 2, cw, ch, 0, 0, W, H);
+  const d = grabx.getImageData(0, 0, W, H).data, img = new Float32Array(W * H * 3);
+  for (let p = 0; p < W * H; p++) { img[p * 3] = d[p * 4] / 255; img[p * 3 + 1] = d[p * 4 + 1] / 255; img[p * 3 + 2] = d[p * 4 + 2] / 255; }
+  return img;
+}
+function visionStep() {
+  let base, truth = null;
+  if (vSrc === 'synth') {
+    const t = (performance.now() - vT0) / 1000;
+    if (vAuto) {
+      $('vTh').value = Math.round(25 * Math.sin(0.35 * t)); $('vD').value = Math.round(22 * Math.sin(0.23 * t + 1));
+      $('vTh').dispatchEvent(new Event('input')); $('vD').dispatchEvent(new Event('input'));
+    }
+    truth = { th: val('vTh'), d: val('vD') };
+    truth.rho = XC * Math.cos(truth.th * D2R) + YC * Math.sin(truth.th * D2R) + truth.d;
+    base = synthFrame(truth.th, truth.d, COLORS[vCol]);
+    if (PAD.show) { const c = Math.cos(truth.th * D2R), sn = Math.sin(truth.th * D2R), py = 28, px = (truth.rho - py * sn) / c;
+      for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) if ((x - px) ** 2 + (y - py) ** 2 < 196) { const i = (y * W + x) * 3; base[i] = 0.1; base[i + 1] = 0.25; base[i + 2] = 0.85; } }
+  } else if (vSrc === 'cam') {
+    if (!vid.videoWidth) return; base = grabImage(vid, vid.videoWidth, vid.videoHeight);
+  } else {
+    if (!photoImg) return; base = grabImage(photoImg, photoImg.naturalWidth, photoImg.naturalHeight);
+  }
+  const img = addNoise(base, val('vSig'), val('vSp') / 100, val('vLight'), val('vBlur'));
+  const thr = val('vThr');
+  const t0 = performance.now();
+  const P = pipeline(img, vCol, thr, { med: vChip.median, gauss: vChip.gauss, morph: vChip.morph, thin: vSrc !== 'synth', roi: vChip.roi, blob: vChip.blob });
+  const ms = performance.now() - t0;
+  vLastImg = img;
+  const R = pipeline(img, vCol, thr, {});
+
+  blitRGB($('c1'), img);
+  blitMask($('c2'), P.raw, [255, 210, 63]);
+  blitMask($('c3'), P.mask, [79, 140, 255]);
+  const c4 = blitMask($('c4'), P.edge, [255, 255, 255]);
+  if (truth) drawEst(c4, truth, 'rgba(255,255,255,.35)', true);
+  drawEst(c4, R.est, '#ffd23f', true);
+  drawEst(c4, P.est, '#2fbf71', false);
+  if (vChip.roi) { const k = c4.canvas.width / W; c4.save(); c4.fillStyle = 'rgba(79,140,255,.10)'; c4.fillRect(0, 0, c4.canvas.width, (H >> 1) * k);
+    c4.strokeStyle = 'rgba(79,140,255,.6)'; c4.setLineDash([4, 4]); c4.beginPath(); c4.moveTo(0, (H >> 1) * k); c4.lineTo(c4.canvas.width, (H >> 1) * k); c4.stroke(); c4.restore(); }
+  padStep(img, c4);
+
+  const push = (a, v, n) => { a.push(v); if (a.length > n) a.shift(); };
+  push(hist.raw, R.est ? R.est.th : NaN, 31); push(hist.dsp, P.est ? P.est.th : NaN, 31);
+  if (truth) {
+    const err = e => e ? Math.min(Math.abs(e.th - truth.th), 20) : 20;
+    push(hist.okR, err(R.est), 60); push(hist.okF, err(P.est), 60);
+    $('sAcc').innerHTML = `<span class="badc">${rms(hist.okR).toFixed(1)}°</span> → <span class="good">${rms(hist.okF).toFixed(1)}°</span>`;
+  }
+  if (P.est) {
+    $('sTh').textContent = P.est.th.toFixed(1) + '°' + (truth ? ` (true ${truth.th})` : '');
+    $('sD').textContent = P.est.d.toFixed(1) + ' px' + (truth ? ` (true ${truth.d})` : '');
+    const e = 0.03 * P.est.d * 0.5 + P.est.th * D2R;
+    steerF = vChip.lpf ? 0.7 * steerF + 0.3 * e : e;
+  } else { $('sTh').textContent = 'no line'; $('sD').textContent = '–'; }
+  const sb = $('steerBar'), u = Math.max(-1, Math.min(1, -1.2 * steerF));
+  sb.style.left = (u < 0 ? 50 + 50 * u : 50) + '%'; sb.style.width = Math.abs(50 * u) + '%';
+  const jit = a => { const d = []; for (let i = 1; i < a.length; i++) if (isFinite(a[i]) && isFinite(a[i - 1])) d.push(Math.abs(a[i] - a[i - 1])); return d.length ? d.reduce((x, y) => x + y, 0) / d.length : 0; };
+  $('sJit').innerHTML = `<span class="badc">${jit(hist.raw).toFixed(1)}°</span> → <span class="good">${jit(hist.dsp).toFixed(1)}°</span>`;
+  $('sMs').textContent = ms.toFixed(1) + ' ms/frame';
+}
+
+// ---------- landing pad ----------
+const PAD = { show: false, hist: [], rawPrev: false, votePrev: false, flR: 0, flV: 0, n: 0 };
+$('padBtn').onclick = () => { PAD.show = !PAD.show; $('padBtn').classList.toggle('on', PAD.show); };
+function padDetect(img, filt) {
+  let m = threshold(filt ? medianImg(img) : img, 'blue', 0.45);
+  if (filt) m = openM(closeM(m));
+  let n = 0, sx = 0, sy = 0; for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) if (m[y * W + x]) { n++; sx += x; sy += y; }
+  return { found: n > 0.015 * W * H, frac: n / (W * H), cx: n ? sx / n : 0, cy: n ? sy / n : 0 };
+}
+function padStep(img, c4) {
+  const R = padDetect(img, false), F = padDetect(img, true);
+  PAD.hist.push(F.found ? 1 : 0); if (PAD.hist.length > 8) PAD.hist.shift();
+  const voted = vChip.vote ? PAD.hist.reduce((a, b) => a + b, 0) >= 6 : F.found;
+  PAD.n++; if (R.found !== PAD.rawPrev) PAD.flR++; if (voted !== PAD.votePrev) PAD.flV++; PAD.rawPrev = R.found; PAD.votePrev = voted;
+  if (F.found) { const k = c4.canvas.width / W; c4.strokeStyle = '#3fd0ff'; c4.lineWidth = 3; c4.beginPath(); c4.arc(F.cx * k, F.cy * k, 14 * k, 0, 2 * Math.PI); c4.stroke(); }
+  $('sPad').innerHTML = voted ? `<span class="good">LAND ✓</span> (${(F.cx - XC).toFixed(0)}, ${(F.cy - YC).toFixed(0)}) px off centre` : (F.found ? 'seen, confirming…' : 'searching');
+  $('sFlick').innerHTML = `<span class="badc">${PAD.flR}</span> → <span class="good">${PAD.flV}</span> changes`;
+}
+
+// ---------- IIR biquads ----------
+class Biquad {
+  constructor() { this.b = [1, 0, 0]; this.a = [0, 0]; this.x1 = this.x2 = this.y1 = this.y2 = 0; this.init = false; }
+  set(b0, b1, b2, a0, a1, a2) { this.b = [b0 / a0, b1 / a0, b2 / a0]; this.a = [a1 / a0, a2 / a0]; }
+  lowpass(fc, fs) { const w = 2 * Math.PI * Math.min(fc, fs * 0.45) / fs, c = Math.cos(w), al = Math.sin(w) / (2 * Math.SQRT1_2); this.set((1 - c) / 2, 1 - c, (1 - c) / 2, 1 + al, -2 * c, 1 - al); }
+  notch(f0, Q, fs) { const w = 2 * Math.PI * f0 / fs, c = Math.cos(w), al = Math.sin(w) / (2 * Q); this.set(1, -2 * c, 1, 1 + al, -2 * c, 1 - al); }
+  bypass() { this.b = [1, 0, 0]; this.a = [0, 0]; }
+  step(x) {
+    if (!this.init) { this.x1 = this.x2 = x; const g = (this.b[0] + this.b[1] + this.b[2]) / (1 + this.a[0] + this.a[1]); this.y1 = this.y2 = x * g; this.init = true; }
+    const y = this.b[0] * x + this.b[1] * this.x1 + this.b[2] * this.x2 - this.a[0] * this.y1 - this.a[1] * this.y2;
+    this.x2 = this.x1; this.x1 = x; this.y2 = this.y1; this.y1 = y; return y;
+  }
+}
+class FIR {
+  constructor() { this.h = [1]; this.buf = [0]; this.i = 0; this.init = false; this.key = ''; }
+  lowpass(fc, fs) {
+    const N = 2 * Math.round(0.6 * fs / fc) + 1, key = N + ':' + fc + ':' + Math.round(fs);
+    if (key === this.key) return; this.key = key;
+    const wc = 2 * fc / fs, M = (N - 1) / 2, h = [];
+    for (let n = 0; n < N; n++) { const k = n - M, sinc = k === 0 ? wc : Math.sin(Math.PI * wc * k) / (Math.PI * k); h.push(sinc * (0.54 - 0.46 * Math.cos(2 * Math.PI * n / (N - 1)))); }
+    const g = h.reduce((a, b) => a + b, 0); this.h = h.map(v => v / g);
+    if (this.buf.length !== N) { this.buf = new Array(N).fill(this.buf[this.i] || 0); this.i = 0; }
+  }
+  delay(fs) { return (this.h.length - 1) / 2 / fs; }
+  step(x) {
+    if (!this.init) { this.buf.fill(x); this.init = true; }
+    this.buf[this.i] = x; let y = 0; const N = this.h.length;
+    for (let k = 0; k < N; k++) y += this.h[k] * this.buf[(this.i - k + N) % N];
+    this.i = (this.i + 1) % N; return y;
+  }
+}
+function iirDelay(bq, f, fs) {
+  const ph = w => { const [b0, b1, b2] = bq.b, [a1, a2] = bq.a;
+    const nr = b0 + b1 * Math.cos(w) + b2 * Math.cos(2 * w), ni = -b1 * Math.sin(w) - b2 * Math.sin(2 * w);
+    const dr = 1 + a1 * Math.cos(w) + a2 * Math.cos(2 * w), di = -a1 * Math.sin(w) - a2 * Math.sin(2 * w);
+    return Math.atan2(ni, nr) - Math.atan2(di, dr); };
+  const w = 2 * Math.PI * f / fs, dw = 1e-4; let d = ph(w + dw) - ph(w); if (d > Math.PI) d -= 2 * Math.PI; if (d < -Math.PI) d += 2 * Math.PI;
+  return -d / dw / fs;
+}
+function fftMag(x) {
+  const n = x.length, re = new Float64Array(n), im = new Float64Array(n);
+  const mean = x.reduce((s, v) => s + v, 0) / n;
+  for (let i = 0; i < n; i++) re[i] = (x[i] - mean) * (0.5 - 0.5 * Math.cos(2 * Math.PI * i / (n - 1)));
+  for (let i = 1, j = 0; i < n; i++) { let bit = n >> 1; for (; j & bit; bit >>= 1) j ^= bit; j ^= bit; if (i < j) { [re[i], re[j]] = [re[j], re[i]]; [im[i], im[j]] = [im[j], im[i]]; } }
+  for (let len = 2; len <= n; len <<= 1) {
+    const a = -2 * Math.PI / len, wr = Math.cos(a), wi = Math.sin(a);
+    for (let i = 0; i < n; i += len) { let cr = 1, ci = 0;
+      for (let k = 0; k < len / 2; k++) {
+        const ur = re[i + k], ui = im[i + k], vr = re[i + k + len / 2] * cr - im[i + k + len / 2] * ci, vi = re[i + k + len / 2] * ci + im[i + k + len / 2] * cr;
+        re[i + k] = ur + vr; im[i + k] = ui + vi; re[i + k + len / 2] = ur - vr; im[i + k + len / 2] = ui - vi;
+        const t = cr * wr - ci * wi; ci = cr * wi + ci * wr; cr = t;
+      } }
+  }
+  const m = new Float64Array(n / 2); for (let i = 0; i < n / 2; i++) m[i] = Math.hypot(re[i], im[i]) * 2 / n; return m;
+}
+
+// ---------- IMU TAB ----------
+const iChip = chips('iPipe');
+const NF = 256, G = 9.81;
+const imu = {
+  live: false, running: false, fs: 100, lastT: 0, dts: [], t: 0, simTimer: null, auto: true,
+  notchA: [[new Biquad(), new Biquad(), new Biquad()], [new Biquad(), new Biquad(), new Biquad()]], lp: [new Biquad(), new Biquad(), new Biquad()], fir: [new FIR(), new FIR(), new FIR()], lpType: 'iir',
+  pitchComp: 0, pitchRaw: 0, pitchF: 0, gsignP: 1, corrP: [],
+  peaks: [], gyroOnly: 0, comp: 0, kx: [0, 0], kP: [[1, 0], [0, 1]], gsign: 1,
+  magBuf: [], magFBuf: [], ser: { tru: [], raw: [], f: [], g: [], c: [], k: [] }, rawRoll: 0, fused: 0,
+  corr: [], lastPeakT: 0, simRoll: 0, rStart: 0,
+};
+const SER_N = 800;
+function imuReset() {
+  imu.gyroOnly = 0; imu.comp = 0; imu.kx = [0, 0]; imu.kP = [[1, 0], [0, 1]];
+  for (const k in imu.ser) imu.ser[k] = []; imu.magBuf = []; imu.magFBuf = []; imu.peaks = []; imu.t = 0; imu.rStart = 0;
+  imu.notchA.flat().forEach(b => { b.bypass(); b.init = false; }); imu.lp.forEach(b => b.init = false);
+}
+function setLp(t) { imu.lpType = t; $('lpIIR').classList.toggle('on', t === 'iir'); $('lpFIR').classList.toggle('on', t === 'fir'); }
+$('lpIIR').onclick = () => setLp('iir'); $('lpFIR').onclick = () => setLp('fir');
+$('gyroReset').onclick = () => { imu.gyroOnly = imu.rawRoll; imu.rStart = imu.t; };
+$('autoRoll').onclick = () => { imu.auto = !imu.auto; $('autoRoll').classList.toggle('on', imu.auto); };
+
+function processSample(ax, ay, az, gyroDeg, dt, trueRoll, gyroBeta = 0) {
+  imu.t += dt;
+  imu.dts.push(dt); if (imu.dts.length > 100) imu.dts.shift();
+  const fs = 1 / (imu.dts.reduce((a, b) => a + b, 0) / imu.dts.length); imu.fs = fs;
+  const vA = val('iVibA'), vF = Math.min(val('iVibF'), 0.45 * fs), nz = val('iNz');
+  const vib = vA * Math.sin(2 * Math.PI * vF * imu.t);
+  ax += vib + nz * randnM(); ay += 0.5 * vib + nz * randnM(); az += 0.8 * vib + nz * randnM();
+  const gyro = imu.gsign * gyroDeg + val('iBias');
+
+  const fc = val('iFc'), Q = val('iQ'), al0 = val('iAlpha');
+  imu.lp.forEach(b => iChip.lpf ? b.lowpass(fc, fs) : b.bypass());
+  if (imu.lpType === 'fir') imu.fir.forEach(f => f.lowpass(fc, fs));
+  const comps = [ax, ay, az].map((v, i) => {
+    let y = v;
+    for (let k = 0; k < 2; k++) y = imu.notchA[k][i].step(y);
+    const yi = imu.lp[i].step(y), yf = imu.fir[i].step(y);
+    if (!iChip.lpf) return y;
+    return imu.lpType === 'fir' ? yf : yi;
+  });
+  const rawRoll = Math.atan2(ax, Math.hypot(ay, az)) * R2D;
+  const fRoll = Math.atan2(comps[0], Math.hypot(comps[1], comps[2])) * R2D;
+  imu.rawRoll = rawRoll;
+  const rawPitch = Math.atan2(ay, Math.hypot(ax, az)) * R2D, fPitch = Math.atan2(comps[1], Math.hypot(comps[0], comps[2])) * R2D;
+  imu.pitchRaw = rawPitch; imu.pitchF = fPitch;
+  imu.pitchComp = al0 * (imu.pitchComp + imu.gsignP * gyroBeta * dt) + (1 - al0) * fPitch;
+  imu.corrP.push([gyroBeta, fPitch]); if (imu.corrP.length > 200) imu.corrP.shift();
+
+  imu.gyroOnly += gyro * dt;
+  const al = val('iAlpha');
+  imu.comp = al * (imu.comp + gyro * dt) + (1 - al) * fRoll;
+  // Kalman: state [angle, bias]
+  let [a, b] = imu.kx, P = imu.kP; const q1 = 0.002, q2 = 0.0003, Rm = 3;
+  a = a + (gyro - b) * dt;
+  const P00 = P[0][0] + dt * (dt * P[1][1] - P[0][1] - P[1][0] + q1), P01 = P[0][1] - dt * P[1][1], P10 = P[1][0] - dt * P[1][1], P11 = P[1][1] + q2 * dt;
+  const S = P00 + Rm, K0 = P00 / S, K1 = P10 / S, yv = fRoll - a;
+  a += K0 * yv; b += K1 * yv;
+  imu.kP = [[P00 - K0 * P00, P01 - K0 * P01], [P10 - K1 * P00, P11 - K1 * P01]]; imu.kx = [a, b];
+  imu.fused = imu.comp;
+
+  const s = imu.ser, push = (k, v) => { s[k].push(v); if (s[k].length > SER_N) s[k].shift(); };
+  imu.dec = (imu.dec || 0) + 1; const every = Math.max(1, Math.round(fs / 100));
+  if (imu.dec % every === 0) {
+  push('tru', trueRoll); push('raw', rawRoll); push('f', fRoll); push('g', imu.gyroOnly); push('c', imu.comp); push('k', a);
+  }
+  imu.magBuf.push(Math.hypot(ax, ay, az)); if (imu.magBuf.length > NF) imu.magBuf.shift();
+  imu.magFBuf.push(Math.hypot(...comps)); if (imu.magFBuf.length > NF) imu.magFBuf.shift();
+  // gyro sign check while moving
+  imu.corr.push([gyroDeg, fRoll]); if (imu.corr.length > 200) imu.corr.shift();
+  if (imu.live && imu.corr.length === 200 && imu.t - imu.lastSignT > 2) {
+    imu.lastSignT = imu.t;
+    const gs = imu.corr.map(c => c[0]); if (std(gs) > 15) {
+      let sc = 0; for (let i = 5; i < 200; i++) sc += gs[i] * (imu.corr[i][1] - imu.corr[i - 5][1]);
+      const ns = sc >= 0 ? 1 : -1; if (ns !== imu.gsign) { imu.gsign = ns; imu.comp = fRoll; imu.gyroOnly = fRoll; }
+    }
+    const gp = imu.corrP.map(c => c[0]); if (imu.corrP.length === 200 && std(gp) > 15) {
+      let sc = 0; for (let i = 5; i < 200; i++) sc += gp[i] * (imu.corrP[i][1] - imu.corrP[i - 5][1]);
+      const ns = sc >= 0 ? 1 : -1; if (ns !== imu.gsignP) { imu.gsignP = ns; imu.pitchComp = fPitch; }
+    }
+  }
+  if (imu.t - imu.lastPeakT > 0.25 && imu.magBuf.length === NF) { imu.lastPeakT = imu.t; updateNotch(fs, Q); }
+}
+imu.lastSignT = 0;
+function updateNotch(fs, Q) {
+  const m = fftMag(imu.magBuf), df = fs / NF, sorted = [...m].sort((a, b) => a - b), med = sorted[m.length >> 1] + 1e-6;
+  const found = [], mm = Array.from(m);
+  const fmin = Math.max(2, val('iFc') + 1);
+  for (let k = 0; k < 2; k++) {
+    let bi = -1, bv = 0;
+    for (let i = 1; i < mm.length; i++) if (i * df > fmin && mm[i] > bv) { bv = mm[i]; bi = i; }
+    if (bi < 0 || bv < 8 * med || bv < 0.05) break;
+    let f = bi * df;
+    if (bi > 0 && bi < mm.length - 1) { const y0 = m[bi - 1], y1 = m[bi], y2 = m[bi + 1], den = y0 - 2 * y1 + y2; if (den) f = (bi + 0.5 * (y0 - y2) / den) * df; }
+    found.push(f);
+    for (let i = Math.max(0, bi - 3); i <= Math.min(mm.length - 1, bi + 3); i++) mm[i] = 0;
+  }
+  imu.peaks = found;
+  for (let k = 0; k < 2; k++) for (let i = 0; i < 3; i++) {
+    const bq = imu.notchA[k][i];
+    if (iChip.notch && found[k]) bq.notch(found[k], Q, fs); else bq.bypass();
+  }
+}
+function simTick() {
+  const dt = 0.01; let roll;
+  if (imu.auto) { const t = imu.t; roll = 15 * Math.sin(2 * Math.PI * 0.2 * t) + 8 * Math.sin(2 * Math.PI * 0.5 * t + 1); $('iTilt').value = Math.round(roll); $('iTilt').dispatchEvent(new Event('input')); }
+  else { imu.simRoll += (val('iTilt') - imu.simRoll) * 0.05; roll = imu.simRoll; }
+  const rate = (roll - (imu.prevRoll ?? roll)) / dt; imu.prevRoll = roll;
+  const pitch = 10 * Math.sin(2 * Math.PI * 0.13 * imu.t), prate = (pitch - (imu.prevPitch ?? pitch)) / dt; imu.prevPitch = pitch;
+  const cr = Math.cos(roll * D2R), cpch = Math.cos(pitch * D2R);
+  processSample(G * Math.sin(roll * D2R) * cpch + 0.15 * randnM(), G * Math.sin(pitch * D2R) + 0.15 * randnM(), G * cr * cpch + 0.15 * randnM(), rate + 0.8 * randnM(), dt, roll, prate + 0.8 * randnM());
+}
+function startSim(reason) {
+  if (reason !== undefined) $('iMsg').textContent = reason;
+  if (imu.simTimer) return;
+  imu.live = false; imuReset(); imu.dts = [];
+  imu.simTimer = setInterval(simTick, 10);
+  $('simCtl').style.display = ''; $('lgTrue').style.display = '';
+}
+function onMotion(e) {
+  imu.evCount++;
+  const a = e.accelerationIncludingGravity, r = e.rotationRate;
+  if (!a || a.x == null || !r || r.gamma == null) { imu.evNull++; return; }
+  const now = performance.now();
+  if (!imu.live) {
+    imu.live = true; if (imu.simTimer) { clearInterval(imu.simTimer); imu.simTimer = null; }
+    imuReset(); imu.dts = []; imu.lastT = now;
+    $('simCtl').style.display = 'none'; $('lgTrue').style.display = 'none'; $('iMsg').textContent = 'LIVE: real accelerometer + gyroscope.'; $('imuStart').textContent = 'Sensors on';
+    return;
+  }
+  let dt = (now - imu.lastT) / 1000; imu.lastT = now;
+  if (!(dt > 0.001 && dt < 0.2)) return;
+  processSample(a.x, a.y, a.z, r.gamma, dt, NaN, r.beta || 0);
+}
+imu.evCount = 0; imu.evNull = 0;
+async function startMotion() {
+  if (imu.live) return;
+  const diag = () => 'Diagnostics: secure page ' + (window.isSecureContext ? 'yes' : 'NO') + ', DeviceMotionEvent ' + (typeof DeviceMotionEvent !== 'undefined' ? 'yes' : 'NO') + ', events received ' + imu.evCount + ' (empty ' + imu.evNull + ').';
+  $('imuStart').textContent = 'Waiting for sensor…';
+  $('iMsg').textContent = 'Asking the phone for motion data…';
+  try {
+    if (typeof DeviceMotionEvent !== 'undefined' && typeof DeviceMotionEvent.requestPermission === 'function') {
+      let p = 'granted'; try { p = await DeviceMotionEvent.requestPermission(); } catch (e) { p = 'unknown'; } if (p === 'denied') throw new Error('denied');
+    }
+    window.removeEventListener('devicemotion', onMotion);
+    window.addEventListener('devicemotion', onMotion);
+    setTimeout(() => {
+      if (imu.live) { $('imuStart').textContent = 'Sensors on'; return; }
+      $('imuStart').textContent = 'Try again';
+      startSim('No motion data arrived, still showing SIMULATED IMU. ' + diag() + ' If you opened the link from WhatsApp/Gmail, open it in Chrome/Safari directly. Android Chrome: tap the lock icon → Permissions/Site settings → Motion sensors → Allow. iPhone: Settings → Safari → Motion & Orientation Access on.');
+    }, 2000);
+  } catch (err) { $('imuStart').textContent = 'Try again'; startSim('Motion permission refused (' + err.message + '). ' + diag()); }
+}
+$('imuStart').onclick = startMotion;
+
+function plotLines(cv, series, ymin, ymax, opts = {}) {
+  const d = sizeCanvas(cv), c = cv.getContext('2d'), w = cv.width, h = cv.height;
+  c.clearRect(0, 0, w, h);
+  c.strokeStyle = '#1f2940'; c.lineWidth = 1; c.fillStyle = '#6f7a96'; c.font = (10 * d) + 'px system-ui';
+  const ticks = opts.ticks || 4;
+  for (let i = 0; i <= ticks; i++) { const y = h - (i / ticks) * h; c.beginPath(); c.moveTo(0, y); c.lineTo(w, y); c.stroke(); const v = ymin + (ymax - ymin) * i / ticks; c.fillText((opts.fmt || (x => x.toFixed(0)))(v), 4 * d, Math.min(h - 3 * d, Math.max(11 * d, y - 3 * d))); }
+  for (const s of series) {
+    const a = s.data; if (!a || a.length < 2) continue;
+    const n = s.n || a.length;
+    c.strokeStyle = s.color; c.lineWidth = (s.w || 1.6) * d; c.setLineDash(s.dash ? [5 * d, 4 * d] : []); c.beginPath();
+    let started = false;
+    for (let i = 0; i < a.length; i++) {
+      if (!isFinite(a[i])) { started = false; continue; }
+      const x = (s.x ? s.x(i) : (i + n - a.length) / (n - 1)) * w, y = h - (Math.max(ymin, Math.min(ymax, a[i])) - ymin) / (ymax - ymin) * h;
+      if (!started) { c.moveTo(x, y); started = true; } else c.lineTo(x, y);
+    }
+    c.stroke();
+  }
+  c.setLineDash([]);
+  return c;
+}
+function imuDraw() {
+  const s = imu.ser;
+  plotLines($('pRoll'), [
+    { data: s.raw, color: 'rgba(255,107,107,.55)', w: 1, n: SER_N },
+    { data: s.tru, color: '#ffffff', w: 2.2, n: SER_N },
+    { data: s.f, color: '#4f8cff', n: SER_N },
+    { data: s.g, color: '#ffb020', n: SER_N },
+    { data: s.k, color: '#c77dff', dash: true, n: SER_N },
+    { data: s.c, color: '#2fbf71', w: 2, n: SER_N },
+  ], -50, 50, { fmt: v => v.toFixed(0) + '°' });
+  // attitude
+  const cv = $('pAtt'), d = sizeCanvas(cv), c = cv.getContext('2d'), w = cv.width, h = cv.height;
+  c.clearRect(0, 0, w, h);
+  c.strokeStyle = '#26304a'; c.lineWidth = 1; c.beginPath(); c.moveTo(0, h / 2); c.lineTo(w, h / 2); c.stroke();
+  const drone = (ang, col, alpha) => {
+    c.save(); c.globalAlpha = alpha; c.translate(w / 2, h / 2); c.rotate(-ang * D2R); const L = Math.min(w * 0.38, h * 0.9);
+    c.strokeStyle = col; c.lineWidth = 6 * d; c.lineCap = 'round'; c.beginPath(); c.moveTo(-L, 0); c.lineTo(L, 0); c.stroke();
+    c.fillStyle = col; c.fillRect(-14 * d, -9 * d, 28 * d, 18 * d);
+    for (const sx of [-1, 1]) { c.beginPath(); c.ellipse(sx * L, -8 * d, 26 * d, 5 * d, 0, 0, 2 * Math.PI); c.fill(); }
+    c.restore();
+  };
+  drone(imu.rawRoll, '#ff6b6b', 0.35); drone(imu.fused, '#2fbf71', 1);
+  c.fillStyle = '#e6ebf5'; c.font = (13 * d) + 'px system-ui'; c.fillText('roll ' + imu.fused.toFixed(1) + '°', 8 * d, 18 * d);
+  // spectrum
+  if (imu.magBuf.length === NF) {
+    const m1 = fftMag(imu.magBuf), m2 = fftMag(imu.magFBuf), fs = imu.fs, db = v => 20 * Math.log10(v + 1e-4);
+    const n = m1.length, xf = i => i / (n - 1);
+    const sc = plotLines($('pSpec'), [{ data: Array.from(m1, db), color: '#ff6b6b', x: xf }, { data: Array.from(m2, db), color: '#4f8cff', x: xf }], -60, 10, { fmt: v => v.toFixed(0) + ' dB' });
+    const ww = sc.canvas.width, hh = sc.canvas.height, dd = Math.min(window.devicePixelRatio || 1, 2);
+    sc.fillStyle = '#6f7a96'; sc.font = (10 * dd) + 'px system-ui';
+    const fstep = fs > 200 ? 50 : 10;
+    for (let f = 0; f <= fs / 2; f += fstep) sc.fillText(f + ' Hz', (f / (fs / 2)) * ww + 2, hh - 4 * dd);
+    sc.strokeStyle = '#ffd23f'; sc.setLineDash([4 * dd, 4 * dd]); sc.lineWidth = 1.5 * dd;
+    for (const p of imu.peaks) { const x = p / (fs / 2) * ww; sc.beginPath(); sc.moveTo(x, 0); sc.lineTo(x, hh); sc.stroke(); }
+    sc.setLineDash([]);
+  }
+  $('iFs').textContent = imu.fs.toFixed(0) + ' Hz';
+  $('iDelay').textContent = !iChip.lpf ? 'off' : imu.lpType === 'fir' ? (1000 * imu.fir[0].delay(imu.fs)).toFixed(0) + ' ms (FIR, ' + imu.fir[0].h.length + ' taps)' : (1000 * iirDelay(imu.lp[0], 1, imu.fs)).toFixed(0) + ' ms (IIR)';
+  $('iPeak').textContent = imu.peaks.length ? imu.peaks.map(p => p.toFixed(1)).join(', ') + ' Hz' : 'none';
+  const tail = a => a.slice(-150);
+  const hp = a => { const t = tail(a), o = []; for (let i = 1; i < t.length; i++) o.push(t[i] - t[i - 1]); return o; };
+  $('iNoise').innerHTML = `<span class="badc">${(std(hp(s.raw)) * Math.SQRT1_2).toFixed(2)}°</span> → <span class="good">${(std(hp(s.f)) * Math.SQRT1_2).toFixed(2)}°</span>`;
+  const drift = s.g.length ? s.g[s.g.length - 1] - s.c[s.c.length - 1] : 0;
+  $('iDrift').textContent = (drift >= 0 ? '+' : '') + drift.toFixed(1) + '°';
+}
+
+// ---------- ESP32 + MPU6050 over USB (500 Hz) ----------
+const ESP = { on: false, lastT: 0, rec: null, recStart: 0, k: 0 };
+$('imuEsp').onclick = async () => {
+  try {
+    if (!navigator.serial) throw new Error('Web Serial needs Chrome or Edge on a laptop (GitHub Pages link).');
+    const port = await navigator.serial.requestPort(); await port.open({ baudRate: 921600 });
+    if (imu.simTimer) { clearInterval(imu.simTimer); imu.simTimer = null; }
+    window.removeEventListener('devicemotion', onMotion);
+    imu.live = true; imuReset(); imu.dts = []; ESP.on = true; ESP.lastT = 0;
+    $('simCtl').style.display = 'none'; $('lgTrue').style.display = 'none'; $('imuEsp').classList.add('on');
+    $('iMsg').textContent = 'LIVE: ESP32 + MPU6050 at up to 500 Hz. Tilt the board; switch the motor on to see its vibration peak.';
+    const reader = port.readable.pipeThrough(new TextDecoderStream()).getReader(); let buf = '';
+    while (true) { const { value, done } = await reader.read(); if (done) break; buf += value; const parts = buf.split('\n'); buf = parts.pop(); for (const l of parts) espLine(l); }
+  } catch (e) { $('iMsg').textContent = 'ESP32: ' + e.message; }
+};
+function espLine(l) {
+  const v = l.trim().split(',').map(Number); if (v.length < 7 || v.some(x => !isFinite(x))) return;
+  if (ESP.rec) { ESP.rec.push(l.trim()); if ((v[0] - ESP.recStart) / 1e6 > 20) recFinish(); }
+  if (!ESP.lastT) { ESP.lastT = v[0]; return; }
+  let dt = (v[0] - ESP.lastT) / 1e6; ESP.lastT = v[0]; if (!(dt > 0 && dt < 0.1)) return;
+  processSample(v[1], v[2], v[3], v[5], dt, NaN, v[4]);
+}
+$('imuRec').onclick = () => {
+  if (ESP.on) { ESP.rec = ['t_us,ax,ay,az,gx,gy,gz']; ESP.recStart = ESP.lastT; $('imuRec').classList.add('on'); $('imuRec').textContent = 'Recording…'; return; }
+  $('iMsg').textContent = 'Recording works with the ESP32 source. Connect it first.';
+};
+function recFinish() {
+  const txt = ESP.rec.join('\n') + '\n', n = ESP.rec.length - 1; ESP.rec = null;
+  $('imuRec').classList.remove('on'); $('imuRec').textContent = 'Record 20 s CSV';
+  try { const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([txt], { type: 'text/csv' })); a.download = 'mpu6050_log_' + Date.now() + '.csv'; document.body.appendChild(a); a.click(); a.remove(); $('iMsg').textContent = 'Saved ' + n + ' samples. Analyse it with matlab/esp32_mpu6050_analysis.m'; }
+  catch (e) { $('iMsg').textContent = 'Download blocked here: ' + e.message; }
+}
+
+// ---------- ALTITUDE TAB ----------
+const aChip = chips('aPipe');
+const alt = { t: 0, tru: [], raw: [], out: [], win: [], ma: [], kx: [0, 0], kP: [[1, 0], [0, 1]], burst: 0 };
+const ALT_N = 500, AFS = 50;
+$('aBurst').onclick = () => alt.burst = 25;
+function altTrue(t) { const c = t % 20; if (c < 3) return 1.1 * c / 3; if (c < 15) return 1.1; if (c < 19) return 1.1 * (19 - c) / 4; return 0; }
+function altTick() {
+  const dt = 1 / AFS; alt.t += dt;
+  const h = altTrue(alt.t);
+  let z = h + val('aSig') / 100 * randn();
+  const spike = Math.random() < val('aSp') / 100 || (alt.burst > 0 && Math.random() < 0.5);
+  if (alt.burst > 0) alt.burst--;
+  if (spike) z += (Math.random() < 0.5 ? -1 : 1) * val('aSz') / 100 * (0.6 + 0.4 * Math.random());
+  let y = z;
+  alt.win.push(z); if (alt.win.length > 7) alt.win.shift();
+  if (aChip.median) { const s = [...alt.win].sort((a, b) => a - b); y = s[s.length >> 1]; }
+  alt.ma.push(y); if (alt.ma.length > 15) alt.ma.shift();
+  if (aChip.ma) y = alt.ma.reduce((a, b) => a + b, 0) / alt.ma.length;
+  if (aChip.kal) {
+    let [p, v] = alt.kx, P = alt.kP; const q1 = 1e-6, q2 = 2e-3, R = Math.max(1e-4, (val('aSig') / 100) ** 2);
+    p += v * dt;
+    let P00 = P[0][0] + dt * (P[1][0] + P[0][1]) + dt * dt * P[1][1] + q1, P01 = P[0][1] + dt * P[1][1], P10 = P[1][0] + dt * P[1][1], P11 = P[1][1] + q2;
+    const S = P00 + R, K0 = P00 / S, K1 = P10 / S, r = y - p; p += K0 * r; v += K1 * r;
+    alt.kP = [[P00 - K0 * P00, P01 - K0 * P01], [P10 - K1 * P00, P11 - K1 * P01]]; alt.kx = [p, v]; y = p;
+  } else alt.kx = [y, 0];
+  const push = (a, v) => { a.push(v); if (a.length > ALT_N) a.shift(); };
+  push(alt.tru, h); push(alt.raw, z); push(alt.out, y);
+}
+function altDraw() {
+  plotLines($('pAlt'), [
+    { data: alt.raw, color: 'rgba(255,107,107,.7)', w: 1, n: ALT_N },
+    { data: alt.tru, color: '#fff', w: 2.2, n: ALT_N },
+    { data: alt.out, color: '#2fbf71', w: 2, n: ALT_N },
+  ], -0.4, 1.6, { fmt: v => v.toFixed(1) + ' m' });
+  const er = alt.raw.map((v, i) => v - alt.tru[i]), eo = alt.out.map((v, i) => v - alt.tru[i]);
+  const sig = alt.tru.reduce((s, x) => s + x * x, 0);
+  const snr = e => 10 * Math.log10(sig / (e.reduce((s, x) => s + x * x, 0) + 1e-9));
+  $('aRmse').innerHTML = `<span class="badc">${(100 * rms(er)).toFixed(1)}</span> → <span class="good">${(100 * rms(eo)).toFixed(1)} cm</span>`;
+  $('aSnr').innerHTML = `<span class="badc">${snr(er).toFixed(1)}</span> → <span class="good">${snr(eo).toFixed(1)} dB</span>`;
+  const c = alt.t % 20; $('aPh').textContent = c < 3 ? 'take-off' : c < 15 ? 'hover' : c < 19 ? 'landing' : 'on ground';
+}
+
+// ---------- FLIGHT TAB ----------
+const fly = { started: false, fast: false };
+const S_PX = 0.5, TRK_W = 6, V = 25, FDT = 0.05;
+function flyReset() {
+  fly.started = true; fly.t = 0;
+  fly.d = [{ name: 'raw', filt: false }, { name: 'dsp', filt: true }].map(o => ({ ...o, x: 0, y: 5, psi: 0, ef: 0, pe: 0, prev: { th: 0, d: 0, rho: 0 }, path: [[0, 5]], err: [], w: [], lost: null }));
+}
+$('fGo').onclick = flyReset;
+$('fFast').onclick = () => { fly.fast = !fly.fast; $('fFast').classList.toggle('on', fly.fast); };
+const TRK0 = [[0, 0], [220, 0], [360, 70], [560, 70], [700, -50], [900, -50]];
+function trackPts() { const a = val('fA') / 40; return TRK0.map(([x, y]) => [x, y * a]); }
+function segDist(px, py, pts) {
+  let best = 1e9, sgn = 1;
+  for (let i = 0; i < pts.length - 1; i++) {
+    const [x1, y1] = pts[i], [x2, y2] = pts[i + 1], dx = x2 - x1, dy = y2 - y1, L2 = dx * dx + dy * dy;
+    let t = ((px - x1) * dx + (py - y1) * dy) / L2; t = Math.max(0, Math.min(1, t));
+    const ex = px - x1 - t * dx, ey = py - y1 - t * dy, dd = Math.hypot(ex, ey);
+    if (dd < best) { best = dd; sgn = (dx * ey - dy * ex) >= 0 ? 1 : -1; }
+  }
+  return [best, sgn];
+}
+function renderTrack(dr, nz) {
+  const pts = trackPts(), cp = Math.cos(dr.psi), sp = Math.sin(dr.psi);
+  const base = paint((X, Y) => {
+    const fwd = (YC - Y) * S_PX, lft = (XC - X) * S_PX;
+    return segDist(dr.x + fwd * cp - lft * sp, dr.y + fwd * sp + lft * cp, pts)[0] < TRK_W;
+  }, COLORS.red);
+  if (nz) return addNoise(base, nz.sig, nz.sp, nz.light, 7);
+  return addNoise(base, val('fSig'), val('fSp') / 100, val('fLight'), 7);
+}
+function flyStep() {
+  if (!fly.started) return;
+  const pts = trackPts();
+  for (const dr of fly.d) {
+    if (dr.lost !== null || dr.x > 900) continue;
+    const img = renderTrack(dr);
+    const P = pipeline(img, 'red', 0.45, { med: dr.filt, morph: dr.filt });
+    let est = P.est || dr.prev; dr.prev = est;
+    const e = 0.03 * est.d * S_PX + est.th * D2R;
+    dr.ef = dr.filt ? 0.6 * dr.ef + 0.4 * e : e;
+    const de = (dr.ef - dr.pe) / FDT; dr.pe = dr.ef;
+    dr.psi += -(1.2 * dr.ef + 0.1 * de) * FDT;
+    dr.x += V * Math.cos(dr.psi) * FDT; dr.y += V * Math.sin(dr.psi) * FDT;
+    const [dd, sg] = segDist(dr.x, dr.y, pts), err = dd * sg;
+    dr.err.push(err); dr.path.push([dr.x, dr.y]); dr.w.push(-(1.2 * dr.ef + 0.1 * de));
+    if (Math.abs(err) > 40) dr.lost = fly.t;
+    const cv = $(dr.filt ? 'fF' : 'fR'); blitRGB(cv, img); drawEst(cv.getContext('2d'), P.est, dr.filt ? '#4f8cff' : '#ffd23f', false);
+  }
+  fly.t += FDT;
+}
+function flyDraw() {
+  if (!fly.started) return;
+  const cv = $('pFly'), d = sizeCanvas(cv), c = cv.getContext('2d'), w = cv.width, h = cv.height;
+  const sx = w / 900, sy = h / 200, Y = y => h / 2 - y * sy;
+  c.clearRect(0, 0, w, h);
+  c.strokeStyle = 'rgba(204,38,25,.85)'; c.lineWidth = Math.max(3, 2 * TRK_W * sy); c.lineJoin = 'round'; c.beginPath();
+  trackPts().forEach(([x, y], i) => i ? c.lineTo(x * sx, Y(y)) : c.moveTo(x * sx, Y(y))); c.stroke();
+  for (const dr of fly.d) {
+    c.strokeStyle = dr.filt ? '#4f8cff' : '#ffd23f'; c.lineWidth = 2 * d; c.beginPath();
+    dr.path.forEach(([x, y], i) => i ? c.lineTo(x * sx, Y(y)) : c.moveTo(x * sx, Y(y))); c.stroke();
+    const [x, y] = dr.path[dr.path.length - 1];
+    c.fillStyle = dr.lost !== null ? '#ff5a5f' : (dr.filt ? '#4f8cff' : '#ffd23f');
+    c.beginPath(); c.arc(x * sx, Y(y), 6 * d, 0, 2 * Math.PI); c.fill();
+    if (dr.lost !== null) { c.fillStyle = '#ff5a5f'; c.font = (12 * d) + 'px system-ui'; c.fillText('LOST TRACK', x * sx + 8 * d, Y(y) - 8 * d); }
+  }
+  const st = dr => dr.lost !== null ? `<span class="badc">lost at ${dr.lost.toFixed(1)} s</span>` : `<span class="good">on track</span> · ${rms(dr.err).toFixed(1)} cm`;
+  $('fsR').innerHTML = st(fly.d[0]); $('fsF').innerHTML = st(fly.d[1]);
+  const jerk = w => { const d = []; for (let i = 1; i < w.length; i++) d.push(w[i] - w[i - 1]); return rms(d); };
+  $('fJ').innerHTML = `<span class="badc">${jerk(fly.d[0].w).toFixed(2)}</span> → <span class="good">${jerk(fly.d[1].w).toFixed(2)}</span>`;
+  plotLines($('pSteer'), [{ data: fly.d[0].w.slice(-200), color: '#ffd23f', n: 200, w: 1.3 }, { data: fly.d[1].w.slice(-200), color: '#4f8cff', n: 200, w: 2 }], -1.5, 1.5, { ticks: 2, fmt: v => v.toFixed(1) });
+  $('fT').textContent = fly.t.toFixed(1) + ' s';
+}
+
+
+// ---------- DRONE MODE ----------
+const drone = { on: false, src: 'synth', noise: false, steer: 0, t0: performance.now() };
+$('dNoise').onclick = () => { drone.noise = !drone.noise; $('dNoise').classList.toggle('on', drone.noise); };
+$('dStart').onclick = async () => {
+  $('dMsg').textContent = '';
+  startMotion();
+  try {
+    if (!camStream) {
+      camStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment', width: { ideal: 640 }, height: { ideal: 480 } }, audio: false });
+      vid.srcObject = camStream; await vid.play();
+    }
+    drone.src = 'cam';
+  } catch (e) { drone.src = 'synth'; $('dMsg').textContent = 'Camera blocked here (' + e.name + '), using a synthetic track. Open the GitHub Pages link on your phone for the real camera.'; }
+  drone.on = true; $('dStart').textContent = 'Running';
+};
+function drawHorizon(roll, pitch, rawRoll) {
+  const cv = $('dHor'), d = sizeCanvas(cv), c = cv.getContext('2d'), w = cv.width, h = cv.height;
+  c.save(); c.clearRect(0, 0, w, h); c.translate(w / 2, h / 2); c.rotate(-roll * D2R);
+  const off = pitch * h / 60;
+  c.fillStyle = '#1e4f8f'; c.fillRect(-w, -2 * h + off, 2 * w, 2 * h);
+  c.fillStyle = '#6b4a2b'; c.fillRect(-w, off, 2 * w, 2 * h);
+  c.strokeStyle = '#fff'; c.lineWidth = 2 * d; c.beginPath(); c.moveTo(-w, off); c.lineTo(w, off); c.stroke();
+  c.font = (10 * d) + 'px system-ui'; c.fillStyle = '#fff';
+  for (const p of [-20, -10, 10, 20]) { const y = off - p * h / 60; c.beginPath(); c.moveTo(-30 * d, y); c.lineTo(30 * d, y); c.stroke(); c.fillText(p + '°', 34 * d, y + 3 * d); }
+  c.restore();
+  c.save(); c.translate(w / 2, h / 2); c.strokeStyle = '#ffd23f'; c.lineWidth = 4 * d; c.lineCap = 'round';
+  c.beginPath(); c.moveTo(-70 * d, 0); c.lineTo(-20 * d, 0); c.lineTo(-10 * d, 10 * d); c.moveTo(70 * d, 0); c.lineTo(20 * d, 0); c.lineTo(10 * d, 10 * d); c.stroke();
+  c.fillStyle = '#ffd23f'; c.beginPath(); c.arc(0, 0, 4 * d, 0, 2 * Math.PI); c.fill(); c.restore();
+  c.fillStyle = 'rgba(0,0,0,.55)'; c.fillRect(6 * d, 6 * d, 150 * d, 40 * d);
+  c.fillStyle = '#fff'; c.font = (12 * d) + 'px system-ui';
+  c.fillText('roll ' + roll.toFixed(1) + '°  pitch ' + pitch.toFixed(1) + '°', 12 * d, 22 * d);
+  c.fillStyle = '#ff9a9a'; c.fillText('raw accel roll ' + rawRoll.toFixed(1) + '°', 12 * d, 38 * d);
+}
+function droneStep() {
+  let base;
+  if (drone.src === 'cam' && vid.videoWidth) base = grabImage(vid, vid.videoWidth, vid.videoHeight);
+  else { const t = (performance.now() - drone.t0) / 1000; base = synthFrame(20 * Math.sin(0.3 * t), 18 * Math.sin(0.2 * t + 1), COLORS[vCol]); }
+  const img = drone.noise ? addNoise(base, val('vSig'), val('vSp') / 100, val('vLight'), val('vBlur')) : base;
+  const camLive = drone.src === 'cam' && vid.videoWidth;
+  const P = pipeline(img, vCol, val('vThr'), { med: true, morph: true, thin: camLive, roi: camLive, blob: true });
+  const c = blitRGB($('dCam'), img); drawEst(c, P.est, '#2fbf71', false);
+  blitMask($('dMask'), P.mask, [79, 140, 255]);
+  if (P.est) {
+    const e = 0.03 * P.est.d * 0.5 + P.est.th * D2R; drone.steer = 0.7 * drone.steer + 0.3 * e;
+    $('dTh').textContent = P.est.th.toFixed(1) + '°'; $('dD').textContent = P.est.d.toFixed(1) + ' px';
+    $('dStat').innerHTML = '<span class="good">tracking</span>';
+  } else { $('dStat').innerHTML = '<span class="badc">no line</span>'; $('dTh').textContent = '–'; $('dD').textContent = '–'; }
+  const u = Math.max(-1, Math.min(1, -1.2 * drone.steer)), sb = $('dSteer');
+  sb.style.left = (u < 0 ? 50 + 50 * u : 50) + '%'; sb.style.width = Math.abs(50 * u) + '%';
+  $('dRoll').textContent = imu.comp.toFixed(1) + '°'; $('dPitch').textContent = imu.pitchComp.toFixed(1) + '°';
+  $('dVib').textContent = imu.peaks.length ? imu.peaks.map(p => p.toFixed(1)).join(', ') + ' Hz' : 'none';
+  drawHorizon(imu.comp, imu.pitchComp, imu.rawRoll);
+}
+
+// ---------- RESULTS ----------
+const RES = {};
+const tick = () => new Promise(r => setTimeout(r, 0));
+function fmt(v, dp) { return typeof v === 'number' ? v.toFixed(dp) : v; }
+function table(key, title, cols, rows, dps, bestIdx) {
+  RES[key] = { title, cols, rows };
+  let h = `<div class="tblwrap"><table class="tbl"><tr>${cols.map(c => `<th>${c}</th>`).join('')}</tr>`;
+  rows.forEach((r, i) => { h += `<tr class="${i === bestIdx ? 'best' : ''}">${r.map((v, j) => `<td>${j ? fmt(v, dps[j]) : v}</td>`).join('')}</tr>`; });
+  return h + '</table></div>';
+}
+function setProg(f, txt) { $('rProg').style.width = (100 * f) + '%'; if (txt) $('rStat').textContent = txt; }
+const VARS = [['None (raw threshold)', {}], ['Median 3×3', { med: 1 }], ['Gaussian 5×5', { gauss: 1 }], ['Morphology only', { morph: 1 }], ['Gaussian + morphology', { gauss: 1, morph: 1 }], ['Median + morphology (ours)', { med: 1, morph: 1 }]];
+const CONDS = [['Salt & pepper', { sig: 0.02, sp: 0.15, light: 0.3, blur: 3 }], ['Gaussian noise', { sig: 0.25, sp: 0, light: 0.3, blur: 3 }], ['Mixed: lighting + blur + both', { sig: 0.10, sp: 0.08, light: 0.7, blur: 7 }]];
+const TOL_TH = 3, TOL_D = 3;
+function visTrial(variants, nz, n, seed, onStep) {
+  setSeed(seed);
+  const acc = variants.map(() => ({ ok: 0, ea: [], ed: [], ms: 0 }));
+  for (let i = 0; i < n; i++) {
+    const th = -35 + 70 * rand(), d = -30 + 60 * rand();
+    const img = addNoise(synthFrame(th, d, COLORS.red), nz.sig, nz.sp, nz.light, nz.blur);
+    variants.forEach(([, o], k) => {
+      const t0 = performance.now(), e = pipeline(img, 'red', 0.45, o).est; acc[k].ms += performance.now() - t0;
+      const ea = e ? Math.min(Math.abs(e.th - th), 20) : 20, ed = e ? Math.min(Math.abs(e.d - d), 20) : 20;
+      acc[k].ea.push(ea); acc[k].ed.push(ed); if (ea < TOL_TH && ed < TOL_D) acc[k].ok++;
+    });
+    if (onStep) onStep(i);
+  }
+  clearSeed();
+  return acc.map(a => ({ succ: 100 * a.ok / n, ang: rms(a.ea), off: rms(a.ed), ms: a.ms / n }));
+}
+async function runE1(p0 = 0, p1 = 1) {
+  const N = 60; let html = '';
+  for (let c = 0; c < CONDS.length; c++) {
+    const [cname, nz] = CONDS[c];
+    const res = [];
+    for (let i = 0; i < N; i += 10) { res.push(visTrial(VARS, nz, 10, 1000 * c + i + 1)); setProg(p0 + (p1 - p0) * (c * N + i + 10) / (3 * N), 'E1 · ' + cname + '…'); await tick(); }
+    const agg = VARS.map((v, k) => ({ succ: res.reduce((s, r) => s + r[k].succ, 0) / res.length, ang: Math.sqrt(res.reduce((s, r) => s + r[k].ang ** 2, 0) / res.length), off: Math.sqrt(res.reduce((s, r) => s + r[k].off ** 2, 0) / res.length), ms: res.reduce((s, r) => s + r[k].ms, 0) / res.length }));
+    let best = 0; agg.forEach((a, k) => { if (a.succ > agg[best].succ || (a.succ === agg[best].succ && a.ang < agg[best].ang)) best = k; });
+    html += `<h3 style="margin-top:12px;text-transform:none">${cname}</h3>` + table('E1 ' + cname, 'E1 Vision · ' + cname + ` (${N} frames, success = |Δθ|<${TOL_TH}° and |Δd|<${TOL_D} px)`, ['Filter', 'Success %', 'Angle RMSE °', 'Offset RMSE px', 'ms/frame'], VARS.map((v, k) => [v[0], agg[k].succ, agg[k].ang, agg[k].off, agg[k].ms]), [0, 0, 2, 2, 1], best);
+    const raw = agg[0], med = agg[1], gau = agg[2], ours = agg[5];
+    const close = (a, b) => Math.abs(a - b) < 0.15;
+    let why;
+    if (c === 0) why = med.ang < gau.ang ? `Median beats Gaussian (${med.ang.toFixed(2)}° vs ${gau.ang.toFixed(2)}°): a median throws impulses away, while a Gaussian averages them into the neighbours.` : `Gaussian matched median here (${gau.ang.toFixed(2)}° vs ${med.ang.toFixed(2)}°).`;
+    else if (c === 1) why = gau.ang < med.ang ? `For Gaussian noise the Gaussian filter is the matched choice (${gau.ang.toFixed(2)}° vs median ${med.ang.toFixed(2)}°).` : `Even for Gaussian noise the median ${close(med.ang, gau.ang) ? 'roughly matches' : 'edges out'} the Gaussian (${med.ang.toFixed(2)}° vs ${gau.ang.toFixed(2)}°), because the colour threshold after it is non-linear; both remove most of the error.`;
+    else why = `Every smoothing filter clears most of the error. Gaussian (${gau.ang.toFixed(2)}°, ${gau.ms.toFixed(1)} ms) and our median + morphology (${ours.ang.toFixed(2)}°, ${ours.ms.toFixed(1)} ms) are ${close(gau.ang, ours.ang) ? 'within measurement spread of each other' : 'clearly different'}; the Gaussian is cheaper.`;
+    if (agg[3].ang > raw.ang) why += ` Morphology alone makes things worse (${agg[3].ang.toFixed(2)}°): opening/closing a noisy mask without smoothing first distorts the track edges.`;
+    html += `<div class="verdict">Best: <b>${VARS[best][0]}</b> (${agg[best].succ.toFixed(0)}% success, ${agg[best].ang.toFixed(2)}° error vs ${raw.succ.toFixed(0)}% / ${raw.ang.toFixed(2)}° with no filter). ${why}</div>`;
+  }
+  html += `<p class="hint">Differences under about 0.15° are within the spread of a 60-frame test.</p>`;
+  $('e1').innerHTML = html;
+}
+async function runE2(p0 = 0, p1 = 1) {
+  const lv = [0, 0.05, 0.1, 0.15, 0.2, 0.25], sel = [0, 1, 2, 5], N = 30, out = sel.map(() => []);
+  for (let j = 0; j < lv.length; j++) {
+    const r = visTrial(sel.map(k => VARS[k]), { sig: 0.05, sp: lv[j], light: 0.3, blur: 3 }, N, 500 + j);
+    r.forEach((v, k) => out[k].push(v));
+    setProg(p0 + (p1 - p0) * (j + 1) / lv.length, 'E2 · noise level ' + (lv[j] * 100) + '%…'); await tick();
+  }
+  const cv = $('e2c'); cv.style.display = 'block';
+  const cols = ['#ff6b6b', '#ffb020', '#c77dff', '#2fbf71'];
+  const xf = i => i / (lv.length - 1);
+  const ymax = Math.max(4, Math.ceil(Math.max(...out.flat().map(v => v.ang))));
+  const c = plotLines(cv, out.map((a, k) => ({ data: a.map(v => v.ang), color: cols[k], w: 2.4, x: xf })), 0, ymax, { fmt: v => v.toFixed(1) + '°' });
+  const dd = Math.min(window.devicePixelRatio || 1, 2); c.fillStyle = '#6f7a96'; c.font = (10 * dd) + 'px system-ui';
+  lv.forEach((l, i) => c.fillText((l * 100) + '%', Math.min(cv.width - 24 * dd, xf(i) * cv.width + 2), cv.height - 4 * dd));
+  let html = `<div class="legend">${sel.map((k, i) => `<span><em style="background:${cols[i]}"></em>${VARS[k][0]}</span>`).join('')}</div>`;
+  html += `<p class="hint">Angle error (RMS, lower is better) vs salt-and-pepper density, ${N} frames per point.</p>`;
+  html += table('E2', 'E2 Vision · angle RMSE (°) vs salt & pepper density', ['Filter', ...lv.map(l => (l * 100) + '%')], sel.map((k, i) => [VARS[k][0], ...out[i].map(v => v.ang)]), [0, 2, 2, 2, 2, 2, 2], 3);
+  const last = out.map(a => a[a.length - 1].ang);
+  const worstF = Math.max(...out.slice(1).flat().map(v => v.ang));
+  html += `<div class="verdict">With no filter the angle error climbs from ${out[0][0].ang.toFixed(2)}° to ${last[0].toFixed(2)}° as noise rises to 25%. Every filtered pipeline stays at or below ${worstF.toFixed(2)}° across the whole range, so the filters matter more as conditions get worse. At this level, median and Gaussian perform about the same.</div>`;
+  $('e2').innerHTML = html;
+}
+function findPeaks(m, fs, n, fmin) {
+  const df = fs / n, sorted = [...m].sort((a, b) => a - b), med = sorted[m.length >> 1] + 1e-6, mm = Array.from(m), found = [];
+  for (let k = 0; k < 2; k++) {
+    let bi = -1, bv = 0; for (let i = 1; i < mm.length; i++) if (i * df > fmin && mm[i] > bv) { bv = mm[i]; bi = i; }
+    if (bi < 0 || bv < 8 * med) break; found.push(bi * df);
+    for (let i = Math.max(0, bi - 3); i <= Math.min(mm.length - 1, bi + 3); i++) mm[i] = 0;
+  }
+  return found;
+}
+async function runE3(p0 = 0, p1 = 1) {
+  setSeed(77);
+  const fs = 100, n = 3000, dt = 1 / fs, fc = 3, tru = [], ax = [], ay = [], az = [], gy = [];
+  for (let i = 0; i < n; i++) {
+    const t = i * dt, r = 15 * Math.sin(2 * Math.PI * 0.2 * t) + 8 * Math.sin(2 * Math.PI * 0.5 * t + 1);
+    const rate = 15 * 2 * Math.PI * 0.2 * Math.cos(2 * Math.PI * 0.2 * t) + 8 * 2 * Math.PI * 0.5 * Math.cos(2 * Math.PI * 0.5 * t + 1);
+    const vib = 4 * Math.sin(2 * Math.PI * 18 * t) + 2 * Math.sin(2 * Math.PI * 36 * t);
+    tru.push(r); gy.push(rate + 1.5 + 0.8 * randn());
+    ax.push(G * Math.sin(r * D2R) + vib + 0.3 * randn()); ay.push(0.5 * vib + 0.3 * randn()); az.push(G * Math.cos(r * D2R) + 0.8 * vib + 0.3 * randn());
+  }
+  clearSeed();
+  const mag = ax.map((v, i) => Math.hypot(v, ay[i], az[i]));
+  const peaks = findPeaks(fftMag(mag.slice(0, 2048)), fs, 2048, fc + 1);
+  const chain = (notch, lp) => {
+    const out = [[], [], []];
+    [ax, ay, az].forEach((sig, a) => {
+      const ns = peaks.map(f => { const b = new Biquad(); b.notch(f, 8, fs); return b; });
+      const l = lp === 'iir' ? (() => { const b = new Biquad(); b.lowpass(fc, fs); return b; })() : lp === 'fir' ? (() => { const f = new FIR(); f.lowpass(fc, fs); return f; })() : null;
+      for (const x of sig) { let y = x; if (notch) for (const b of ns) y = b.step(y); if (l) y = l.step(y); out[a].push(y); }
+    });
+    return out[0].map((x, i) => Math.atan2(x, Math.hypot(out[1][i], out[2][i])) * R2D);
+  };
+  const accRaw = chain(false, null), accIIR = chain(false, 'iir'), accFIR = chain(false, 'fir'), accOurs = chain(true, 'iir'), accOursFIR = chain(true, 'fir');
+  setProg(p0 + (p1 - p0) * 0.5, 'E3 · fusion…'); await tick();
+  const gyro = [], comp = [], kal = []; let g = 0, cp = 0, ka = 0, kb = 0, P = [[1, 0], [0, 1]];
+  for (let i = 0; i < n; i++) {
+    g += gy[i] * dt; gyro.push(g);
+    cp = 0.98 * (cp + gy[i] * dt) + 0.02 * accOurs[i]; comp.push(cp);
+    ka += (gy[i] - kb) * dt;
+    const P00 = P[0][0] + dt * (dt * P[1][1] - P[0][1] - P[1][0] + 0.002), P01 = P[0][1] - dt * P[1][1], P10 = P[1][0] - dt * P[1][1], P11 = P[1][1] + 0.0003 * dt;
+    const S = P00 + 3, K0 = P00 / S, K1 = P10 / S, yv = accOurs[i] - ka; ka += K0 * yv; kb += K1 * yv;
+    P = [[P00 - K0 * P00, P01 - K0 * P01], [P10 - K1 * P00, P11 - K1 * P01]]; kal.push(ka);
+  }
+  const sk = 200, err = a => a.slice(sk).map((v, i) => v - tru[i + sk]);
+  const notchRows = [];
+  for (const fv of [5, 8, 12, 18]) {
+    setSeed(300 + fv); const bx = [], by = [], bz = [];
+    for (let i = 0; i < n; i++) { const vib = 4 * Math.sin(2 * Math.PI * fv * i * dt); bx.push(G * Math.sin(tru[i] * D2R) + vib + 0.3 * randn()); by.push(0.5 * vib + 0.3 * randn()); bz.push(G * Math.cos(tru[i] * D2R) + 0.8 * vib + 0.3 * randn()); }
+    clearSeed();
+    const pk = findPeaks(fftMag(bx.map((v, i) => Math.hypot(v, by[i], bz[i])).slice(0, 2048)), fs, 2048, 4);
+    const run = notch => { const o = [[], [], []]; [bx, by, bz].forEach((sg, a) => { const ns = notch ? pk.map(f => { const q = new Biquad(); q.notch(f, 8, fs); return q; }) : []; const l = new Biquad(); l.lowpass(fc, fs); for (const x of sg) { let y = x; for (const q of ns) y = q.step(y); o[a].push(l.step(y)); } }); return o[0].map((x, i) => Math.atan2(x, Math.hypot(o[1][i], o[2][i])) * R2D); };
+    notchRows.push([fv + ' Hz', rms(err(run(false))), rms(err(run(true))), pk.length ? pk[0].toFixed(1) + ' Hz' : 'none']);
+  }
+  const sig = tru.slice(sk).reduce((s, v) => s + v * v, 0), snr = a => 10 * Math.log10(sig / err(a).reduce((s, v) => s + v * v, 0));
+  const bq = new Biquad(); bq.lowpass(fc, fs); const fir = new FIR(); fir.lowpass(fc, fs);
+  const dI = 1000 * iirDelay(bq, 1, fs), dF = 1000 * fir.delay(fs);
+  const rows = [['Accel only (raw)', accRaw, '–'], ['Accel + IIR low-pass', accIIR, dI], ['Accel + FIR low-pass', accFIR, dF], ['Accel + notch + FIR', accOursFIR, dF], ['Accel + notch + IIR (ours)', accOurs, dI], ['Gyro only (integrated)', gyro, '–'], ['Complementary α=0.98 (ours)', comp, '–'], ['Kalman (angle + bias)', kal, '–']];
+  const R = rows.map(([nm, a, d]) => [nm, rms(err(a)), snr(a), d]);
+  let best = 0; R.forEach((r, k) => { if (r[1] < R[best][1]) best = k; });
+  const cv = $('e3c'); cv.style.display = 'block';
+  plotLines(cv, [{ data: accRaw.slice(0, 800), color: 'rgba(255,107,107,.5)', w: 1 }, { data: tru.slice(0, 800), color: '#fff', w: 2.2 }, { data: gyro.slice(0, 800), color: '#ffb020' }, { data: accOurs.slice(0, 800), color: '#4f8cff' }, { data: comp.slice(0, 800), color: '#2fbf71', w: 2 }], -40, 40, { fmt: v => v.toFixed(0) + '°' });
+  let html = `<div class="legend"><span><em style="background:#fff"></em>true</span><span><em style="background:#ff6b6b"></em>accel raw</span><span><em style="background:#4f8cff"></em>accel notch+IIR</span><span><em style="background:#ffb020"></em>gyro only</span><span><em style="background:#2fbf71"></em>complementary</span></div>`;
+  html += `<p class="hint">30 s of roll at 100 Hz, motor vibration at 18 and 36 Hz, gyro bias 1.5 °/s. FFT found peaks at ${peaks.map(f => f.toFixed(1)).join(' and ')} Hz.</p>`;
+  html += table('E3', 'E3 Inertial · roll estimation (30 s, vibration 18+36 Hz, gyro bias 1.5°/s)', ['Method', 'Roll RMSE °', 'SNR dB', 'LPF delay @1 Hz ms'], R, [0, 2, 1, 0], best);
+  html += `<h3 style="margin-top:12px;text-transform:none">When does the notch matter? (IIR low-pass at ${fc} Hz)</h3>` + table('E3b', 'E3b Notch on/off vs vibration frequency (IIR LPF at 3 Hz), roll RMSE °', ['Vibration', 'LPF only °', 'Notch + LPF °', 'FFT found'], notchRows, [0, 2, 2, 0], -1);
+  html += `<div class="verdict">FIR vs IIR: the FIR low-pass (${fir.h.length} taps, linear phase) delays the signal by ${dF.toFixed(0)} ms against ${dI.toFixed(0)} ms for the 2nd-order IIR Butterworth, so the IIR is the better choice for a control loop. ` +
+    `With vibration far above the cutoff (18/36 Hz) the low-pass alone already removes it, so the notch adds only ${(snr(accOurs) - snr(accIIR)).toFixed(1)} dB. When the vibration sits close to the cutoff, the notch cuts error from ${notchRows[0][1].toFixed(2)}° to ${notchRows[0][2].toFixed(2)}° at ${notchRows[0][0]}. That is why the FFT-guided notch is there: it lets you keep a higher, more responsive cutoff. Gyro-only drifts to ${rms(err(gyro)).toFixed(1)}° RMSE; fusing it with the filtered accelerometer gives ${R[6][1].toFixed(2)}° (complementary) and ${R[7][1].toFixed(2)}° (Kalman).</div>`;
+  $('e3').innerHTML = html;
+}
+async function runE4(p0 = 0, p1 = 1) {
+  setSeed(99);
+  const fs = 50, n = 2000, dt = 1 / fs, tru = [], z = [];
+  for (let i = 0; i < n; i++) { const h = altTrue(i * dt); tru.push(h); let v = h + 0.03 * randn(); if (rand() < 0.03) v += (rand() < 0.5 ? -1 : 1) * (0.3 + 0.3 * rand()); z.push(v); }
+  clearSeed();
+  const med = a => a.map((_, i) => { const w = a.slice(Math.max(0, i - 6), i + 1).sort((x, y) => x - y); return w[w.length >> 1]; });
+  const ma = a => a.map((_, i) => { const w = a.slice(Math.max(0, i - 14), i + 1); return w.reduce((s, v) => s + v, 0) / w.length; });
+  const kf = a => { let p = a[0], v = 0, P = [[1, 0], [0, 1]]; const out = [];
+    for (const y of a) { p += v * dt; const P00 = P[0][0] + dt * (P[1][0] + P[0][1]) + dt * dt * P[1][1] + 1e-6, P01 = P[0][1] + dt * P[1][1], P10 = P[1][0] + dt * P[1][1], P11 = P[1][1] + 2e-3;
+      const S = P00 + 0.0009, K0 = P00 / S, K1 = P10 / S, r = y - p; p += K0 * r; v += K1 * r; P = [[P00 - K0 * P00, P01 - K0 * P01], [P10 - K1 * P00, P11 - K1 * P01]]; out.push(p); } return out; };
+  const zm = med(z);
+  const rows = [['Raw sensor', z], ['Moving average (15)', ma(z)], ['Kalman only', kf(z)], ['Median (7)', zm], ['Median + moving average', ma(zm)], ['Median + Kalman (ours)', kf(zm)]];
+  const sig = tru.reduce((s, v) => s + v * v, 0);
+  const R = rows.map(([nm, a]) => { const e = a.map((v, i) => v - tru[i]); return [nm, 100 * rms(e), 10 * Math.log10(sig / e.reduce((s, v) => s + v * v, 0)), 100 * Math.max(...e.map(Math.abs))]; });
+  let best = 0; R.forEach((r, k) => { if (r[1] < R[best][1]) best = k; });
+  setProg(p1, 'E4 done'); await tick();
+  let html = `<p class="hint" style="margin-top:0">40 s at 50 Hz (two take-off/hover/landing cycles), noise 3 cm, 3% spikes of 30–60 cm.</p>`;
+  html += table('E4', 'E4 Altitude · 40 s, noise 3 cm, 3% spikes 30–60 cm', ['Filter', 'RMSE cm', 'SNR dB', 'Worst error cm'], R, [0, 2, 1, 1], best);
+  html += `<div class="verdict">Linear filters (moving average, Kalman) smear each spike into the neighbouring samples instead of removing it; worst error ${R[1][3].toFixed(0)} cm and ${R[2][3].toFixed(0)} cm. A median removes spikes first (worst ${R[3][3].toFixed(0)} cm), and the Kalman after it smooths what is left: ${R[0][2].toFixed(1)} dB → ${R[5][2].toFixed(1)} dB SNR.</div>`;
+  $('e4').innerHTML = html;
+}
+async function runE5(p0 = 0, p1 = 1) {
+  const nz = { sig: 0.12, sp: 0.12, light: 0.7 }, steps = 640, out = [];
+  setSeed(7);
+  const ds = [{ filt: false }, { filt: true }].map(o => ({ ...o, x: 0, y: 5, psi: 0, ef: 0, pe: 0, prev: { th: 0, d: 0, rho: 0 }, err: [], w: [], lost: null }));
+  const pts = trackPts();
+  for (let i = 0; i < steps; i++) {
+    for (const dr of ds) {
+      if (dr.lost !== null || dr.x > 900) continue;
+      const img = renderTrack(dr, nz), P = pipeline(img, 'red', 0.45, { med: dr.filt, morph: dr.filt });
+      const est = P.est || dr.prev; dr.prev = est;
+      const e = 0.03 * est.d * S_PX + est.th * D2R; dr.ef = dr.filt ? 0.6 * dr.ef + 0.4 * e : e;
+      const de = (dr.ef - dr.pe) / FDT; dr.pe = dr.ef; const w = -(1.2 * dr.ef + 0.1 * de);
+      dr.psi += w * FDT; dr.x += V * Math.cos(dr.psi) * FDT; dr.y += V * Math.sin(dr.psi) * FDT;
+      const [dd, sg] = segDist(dr.x, dr.y, pts); dr.err.push(dd * sg); dr.w.push(w); if (dd > 40) dr.lost = i * FDT;
+    }
+    if (i % 20 === 0) { setProg(p0 + (p1 - p0) * i / steps, 'E5 · flying ' + (i * FDT).toFixed(0) + ' s…'); await tick(); }
+  }
+  clearSeed();
+  const jerk = w => { const d = []; for (let i = 1; i < w.length; i++) d.push(w[i] - w[i - 1]); return rms(d); };
+  const R = ds.map(dr => [dr.filt ? 'Median + morph + low-pass (ours)' : 'Raw threshold, no low-pass', dr.lost === null ? 'yes' : 'lost at ' + dr.lost.toFixed(1) + ' s', rms(dr.err), Math.max(...dr.err.map(Math.abs)), jerk(dr.w)]);
+  let html = `<p class="hint" style="margin-top:0">Competition-style track, ${(steps * FDT).toFixed(0)} s, noise σ=0.12, salt & pepper 12%, uneven lighting. Same random noise sequence for both drones.</p>`;
+  html += table('E5', 'E5 Closed-loop flight (same noise, 32 s)', ['Pipeline', 'Stayed on track', 'Tracking RMSE cm', 'Max error cm', 'Steering jerk'], R, [0, 0, 2, 1, 3], 1);
+  html += `<div class="verdict">Steering is ${(R[0][4] / R[1][4]).toFixed(1)}× smoother with the DSP chain (jerk ${R[0][4].toFixed(3)} → ${R[1][4].toFixed(3)}). Tracking error is ${R[0][2].toFixed(1)} vs ${R[1][2].toFixed(1)} cm: the low-pass adds a little lag. That is the trade-off: smooth commands stop the oscillation a real drone's motors would turn jerky steering into.</div>`;
+  $('e5').innerHTML = html;
+}
+const RUN = { e1: runE1, e2: runE2, e3: runE3, e4: runE4, e5: runE5 };
+let busy = false;
+document.querySelectorAll('[data-run]').forEach(b => b.onclick = async () => {
+  if (busy) return; busy = true; const t0 = performance.now();
+  await RUN[b.dataset.run](0, 1); setProg(1, b.dataset.run.toUpperCase() + ' done in ' + ((performance.now() - t0) / 1000).toFixed(1) + ' s'); busy = false;
+});
+$('rAll').onclick = async () => {
+  if (busy) return; busy = true; const t0 = performance.now();
+  await runE1(0, 0.45); await runE2(0.45, 0.65); await runE3(0.65, 0.72); await runE4(0.72, 0.75); await runE5(0.75, 1);
+  setProg(1, 'All experiments done in ' + ((performance.now() - t0) / 1000).toFixed(0) + ' s. Same seed, so the numbers are identical every run.'); busy = false;
+};
+function resultsText(sep) {
+  let out = '';
+  for (const k in RES) { const r = RES[k]; out += (sep === ',' ? r.title.replace(/,/g, ';') : '### ' + r.title) + '\n';
+    const line = a => sep === ',' ? a.map(v => String(typeof v === 'number' ? v.toFixed(3) : v).replace(/,/g, ';')).join(',') : '| ' + a.map(v => typeof v === 'number' ? v.toFixed(2) : v).join(' | ') + ' |';
+    out += line(r.cols) + '\n'; if (sep !== ',') out += '|' + r.cols.map(() => '---').join('|') + '|\n';
+    r.rows.forEach(row => out += line(row) + '\n'); out += '\n'; }
+  return out;
+}
+$('rCopy').onclick = async () => {
+  if (!Object.keys(RES).length) { $('rStat').textContent = 'Run the experiments first.'; return; }
+  try { await navigator.clipboard.writeText(resultsText('|')); $('rStat').textContent = 'Tables copied as Markdown.'; } catch (e) { $('rStat').textContent = 'Clipboard blocked here: ' + e.name; }
+};
+$('rCsv').onclick = () => {
+  if (!Object.keys(RES).length) { $('rStat').textContent = 'Run the experiments first.'; return; }
+  const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([resultsText(',')], { type: 'text/csv' })); a.download = 'minidrone_dsp_results.csv';
+  document.body.appendChild(a); a.click(); a.remove(); $('rStat').textContent = 'CSV downloaded (if this page blocks downloads, use Copy tables).';
+};
+
+
+// ---------- BEACON (ESP32) ----------
+const bChip = chips('bPipe');
+const BC = { room: [5, 4], anchors: [[0, 0], [5, 0], [0, 4]], start: [0.6, 0.6], goal: [4.4, 3.4], t: 0, src: 'sim', drones: null, cal: [], live: null, queue: [], csvTimer: null, lastRssi: null };
+const BDT = 0.1;
+function rssiToDist(r) { return Math.min(15, Math.pow(10, (val('bP0') - r) / (10 * val('bNexp')))); }
+function simRSSI(p) {
+  return BC.anchors.map(a => {
+    const d = Math.max(0.1, Math.hypot(p[0] - a[0], p[1] - a[1]));
+    let r = val('bP0') - 10 * val('bNexp') * Math.log10(d) + val('bSig') * randnM();
+    if (Math.random() < val('bSpk') / 100) r -= 8 + 15 * Math.random();
+    return { r, d };
+  });
+}
+function kfCV(s, z, dt, q, R) {
+  if (s.p === undefined) { s.p = z; s.v = 0; s.P = [[R, 0], [0, 1]]; return z; }
+  s.p += s.v * dt; const P = s.P;
+  const P00 = P[0][0] + dt * (P[1][0] + P[0][1]) + dt * dt * P[1][1] + q * dt * dt * dt / 3, P01 = P[0][1] + dt * P[1][1] + q * dt * dt / 2, P10 = P[1][0] + dt * P[1][1] + q * dt * dt / 2, P11 = P[1][1] + q * dt;
+  const S = P00 + R, K0 = P00 / S, K1 = P10 / S, r = z - s.p; s.p += K0 * r; s.v += K1 * r;
+  s.P = [[P00 - K0 * P00, P01 - K0 * P01], [P10 - K1 * P00, P11 - K1 * P01]]; return s.p;
+}
+function newProc() { return { win: BC.anchors.map(() => []), kr: BC.anchors.map(() => ({ x: null, P: 4 })), kx: {}, ky: {} }; }
+function trilat(d) {
+  const A = BC.anchors, [x1, y1] = A[0]; let a11 = 0, a12 = 0, a22 = 0, b1 = 0, b2 = 0;
+  for (let i = 1; i < A.length; i++) {
+    const [xi, yi] = A[i], ax = 2 * (xi - x1), ay = 2 * (yi - y1), b = d[0] ** 2 - d[i] ** 2 + xi * xi - x1 * x1 + yi * yi - y1 * y1;
+    a11 += ax * ax; a12 += ax * ay; a22 += ay * ay; b1 += ax * b; b2 += ay * b;
+  }
+  const det = a11 * a22 - a12 * a12; if (Math.abs(det) < 1e-9) return null;
+  const cl = (v, m) => Math.max(-0.5, Math.min(m + 0.5, v));
+  return [cl((a22 * b1 - a12 * b2) / det, BC.room[0]), cl((a11 * b2 - a12 * b1) / det, BC.room[1])];
+}
+function trilatW(d, p0) {
+  let p = p0 ? [...p0] : null; if (!p) return null;
+  for (let it = 0; it < 6; it++) {
+    let a11 = 0, a12 = 0, a22 = 0, b1 = 0, b2 = 0;
+    BC.anchors.forEach((a, i) => {
+      const dx = p[0] - a[0], dy = p[1] - a[1], r = Math.max(0.05, Math.hypot(dx, dy)), jx = dx / r, jy = dy / r, res = d[i] - r;
+      const w = 1 / (0.05 + (0.25 * d[i]) ** 2);
+      a11 += w * jx * jx; a12 += w * jx * jy; a22 += w * jy * jy; b1 += w * jx * res; b2 += w * jy * res;
+    });
+    const det = a11 * a22 - a12 * a12; if (Math.abs(det) < 1e-9) break;
+    const sx = (a22 * b1 - a12 * b2) / det, sy = (a11 * b2 - a12 * b1) / det;
+    p = [Math.max(-0.5, Math.min(BC.room[0] + 0.5, p[0] + sx)), Math.max(-0.5, Math.min(BC.room[1] + 0.5, p[1] + sy))];
+    if (Math.hypot(sx, sy) < 1e-3) break;
+  }
+  return p;
+}
+function processRSSI(pr, rssi, filt, dt) {
+  const f = rssi.map((r, i) => {
+    let y = r;
+    if (filt && bChip.median) { const w = pr.win[i]; w.push(r); if (w.length > 5) w.shift(); const s = [...w].sort((a, b) => a - b); y = s[s.length >> 1]; }
+    if (filt && bChip.kal) { const k = pr.kr[i]; if (k.x === null) k.x = y; k.P += 0.8; const K = k.P / (k.P + Math.max(1, val('bSig') ** 2)); k.x += K * (y - k.x); k.P *= 1 - K; y = k.x; }
+    return y;
+  });
+  const d = f.map(rssiToDist);
+  let p = trilat(d);
+  if (p && filt && bChip.wls) p = trilatW(d, p);
+  if (p && filt && bChip.pkf) p = [kfCV(pr.kx, p[0], dt, 0.05, 0.25), kfCV(pr.ky, p[1], dt, 0.05, 0.25)];
+  return { f, d, p };
+}
+function bReset() {
+  BC.t = 0; BC.cal = [];
+  BC.drones = [{ filt: false, col: '#ff6b6b' }, { filt: true, col: '#4f8cff' }].map(o => ({ ...o, pos: [...BC.start], path: [[...BC.start]], est: [], proc: newProc(), done: null, errs: [], last: null, dist: null }));
+  BC.live = { pr: newProc(), pf: newProc(), raw: [], filt: [], n: 0, dist: null };
+}
+function bSimStep() {
+  if (!BC.drones) bReset();
+  BC.t += BDT;
+  for (const dr of BC.drones) {
+    if (dr.done !== null) continue;
+    const m = simRSSI(dr.pos), rssi = m.map(v => v.r);
+    if (dr.filt) { m.forEach(v => BC.cal.push([v.d, v.r])); if (BC.cal.length > 900) BC.cal.splice(0, BC.cal.length - 900); BC.lastRssi = rssi; }
+    const out = processRSSI(dr.proc, rssi, dr.filt, BDT);
+    const e = out.p || dr.last || dr.pos; dr.last = e; dr.dist = out.d;
+    dr.est.push(e); if (dr.est.length > 600) dr.est.shift();
+    dr.errs.push(Math.hypot(e[0] - dr.pos[0], e[1] - dr.pos[1]));
+    const gx = BC.goal[0] - e[0], gy = BC.goal[1] - e[1], L = Math.hypot(gx, gy);
+    if (L < 0.25 || BC.t > 60) { dr.done = BC.t; dr.arrErr = Math.hypot(dr.pos[0] - BC.goal[0], dr.pos[1] - BC.goal[1]); continue; }
+    dr.pos[0] = Math.max(0, Math.min(BC.room[0], dr.pos[0] + 0.35 * BDT * gx / L));
+    dr.pos[1] = Math.max(0, Math.min(BC.room[1], dr.pos[1] + 0.35 * BDT * gy / L));
+    dr.path.push([...dr.pos]);
+  }
+}
+function bLiveSample(rssi) {
+  if (!BC.live) bReset();
+  const L = BC.live; L.n++; BC.lastRssi = rssi;
+  const a = processRSSI(L.pr, rssi, false, BDT), b = processRSSI(L.pf, rssi, true, BDT);
+  if (a.p) { L.raw.push(a.p); if (L.raw.length > 400) L.raw.shift(); }
+  if (b.p) { L.filt.push(b.p); if (L.filt.length > 400) L.filt.shift(); }
+  L.dist = b.d;
+}
+function parseLine(line) {
+  const nums = (line.match(/-?\d+(\.\d+)?/g) || []).map(Number).filter(v => v < 0 && v > -120);
+  const n = BC.anchors.length; if (nums.length < n) return null;
+  return nums.slice(-n);
+}
+function onLine(line) { const r = parseLine(line); if (r) bLiveSample(r); }
+function setBSrc(s, msg) {
+  BC.src = s; document.querySelectorAll('[data-bsrc]').forEach(x => x.classList.toggle('on', x.dataset.bsrc === s));
+  $('bMsg').textContent = msg || '';
+  $('bHint').textContent = s === 'sim' ? 'Simulated room 5 m × 4 m with anchors A1, A2, A3. Red drone steers using raw trilateration, blue drone uses the filtered chain. Tap the map to move the goal.'
+    : 'LIVE/REPLAY: the same RSSI stream goes through the raw chain (red dots) and the filtered chain (blue path). Put the anchors at the positions shown on the map; carry the drone ESP32 from start to goal.';
+  bReset();
+}
+const NUS = '6e400001-b5a3-f393-e0a9-e50e24dcca9e', NUS_TX = '6e400003-b5a3-f393-e0a9-e50e24dcca9e';
+document.querySelectorAll('[data-bsrc]').forEach(b => b.onclick = async () => {
+  const s = b.dataset.bsrc;
+  if (BC.csvTimer) { clearInterval(BC.csvTimer); BC.csvTimer = null; }
+  if (s === 'sim') return setBSrc('sim');
+  if (s === 'csv') return $('bCsv').click();
+  if (s === 'ble') {
+    try {
+      if (!navigator.bluetooth) throw new Error('Web Bluetooth not available here. Use Chrome on Android/laptop via the GitHub Pages link.');
+      const dev = await navigator.bluetooth.requestDevice({ filters: [{ namePrefix: 'DRONE' }], optionalServices: [NUS] });
+      const ch = await (await (await dev.gatt.connect()).getPrimaryService(NUS)).getCharacteristic(NUS_TX);
+      await ch.startNotifications(); let buf = '';
+      ch.addEventListener('characteristicvaluechanged', e => { buf += new TextDecoder().decode(e.target.value); const parts = buf.split('\n'); buf = parts.pop(); parts.forEach(onLine); });
+      dev.addEventListener('gattserverdisconnected', () => { $('bMsg').textContent = 'ESP32 disconnected.'; });
+      setBSrc('ble', 'Connected to ' + (dev.name || 'ESP32') + ' over Bluetooth.');
+    } catch (e) { $('bMsg').textContent = 'Bluetooth: ' + e.message; }
+    return;
+  }
+  if (s === 'usb') {
+    try {
+      if (!navigator.serial) throw new Error('Web Serial not available here. Use Chrome/Edge on a laptop via the GitHub Pages link.');
+      const port = await navigator.serial.requestPort(); await port.open({ baudRate: 115200 });
+      setBSrc('usb', 'Reading ESP32 over USB at 115200 baud.');
+      const reader = port.readable.pipeThrough(new TextDecoderStream()).getReader(); let buf = '';
+      (async () => { while (true) { const { value, done } = await reader.read(); if (done) break; buf += value; const parts = buf.split('\n'); buf = parts.pop(); parts.forEach(onLine); } })();
+    } catch (e) { $('bMsg').textContent = 'USB: ' + e.message; }
+  }
+});
+$('bCsv').onchange = e => {
+  const f = e.target.files[0]; if (!f) return;
+  f.text().then(txt => {
+    const lines = txt.split(/\r?\n/).filter(l => parseLine(l));
+    setBSrc('csv', 'Replaying ' + lines.length + ' samples from ' + f.name + ' at 10 Hz.');
+    let i = 0; BC.csvTimer = setInterval(() => { if (i >= lines.length) { clearInterval(BC.csvTimer); BC.csvTimer = null; $('bMsg').textContent += ' Done.'; return; } onLine(lines[i++]); }, 100);
+  });
+  e.target.value = '';
+};
+$('bGo').onclick = () => bReset();
+$('bMap').addEventListener('pointerdown', ev => {
+  const cv = $('bMap'), r = cv.getBoundingClientRect(), g = bGeom(cv);
+  const x = ((ev.clientX - r.left) * g.d - g.ox) / g.s, y = (g.oy - (ev.clientY - r.top) * g.d) / g.s;
+  if (x >= 0 && x <= BC.room[0] && y >= 0 && y <= BC.room[1]) { BC.goal = [x, y]; if (BC.src === 'sim') bReset(); }
+});
+function bGeom(cv) { const d = Math.min(window.devicePixelRatio || 1, 2), w = cv.width, h = cv.height, pad = 22 * d, s = Math.min((w - 2 * pad) / BC.room[0], (h - 2 * pad) / BC.room[1]); return { d, s, ox: (w - s * BC.room[0]) / 2, oy: h - (h - s * BC.room[1]) / 2 }; }
+function bDraw() {
+  const cv = $('bMap'); sizeCanvas(cv); const c = cv.getContext('2d'), g = bGeom(cv), d = g.d;
+  const X = x => g.ox + x * g.s, Y = y => g.oy - y * g.s;
+  c.clearRect(0, 0, cv.width, cv.height);
+  c.strokeStyle = '#1f2940'; c.lineWidth = 1;
+  for (let x = 0; x <= BC.room[0]; x++) { c.beginPath(); c.moveTo(X(x), Y(0)); c.lineTo(X(x), Y(BC.room[1])); c.stroke(); }
+  for (let y = 0; y <= BC.room[1]; y++) { c.beginPath(); c.moveTo(X(0), Y(y)); c.lineTo(X(BC.room[0]), Y(y)); c.stroke(); }
+  c.strokeStyle = '#46557a'; c.lineWidth = 2 * d; c.strokeRect(X(0), Y(BC.room[1]), BC.room[0] * g.s, BC.room[1] * g.s);
+  c.fillStyle = '#6f7a96'; c.font = (10 * d) + 'px system-ui'; c.fillText('1 m grid', X(0) + 4 * d, Y(0) - 4 * d);
+  const dist = BC.src === 'sim' ? (BC.drones && BC.drones[1].dist) : (BC.live && BC.live.dist);
+  BC.anchors.forEach((a, i) => {
+    if (dist) { c.strokeStyle = 'rgba(47,191,113,.35)'; c.lineWidth = 1.5 * d; c.beginPath(); c.arc(X(a[0]), Y(a[1]), dist[i] * g.s, 0, 2 * Math.PI); c.stroke(); }
+    c.fillStyle = '#2fbf71'; c.beginPath(); c.moveTo(X(a[0]), Y(a[1]) - 9 * d); c.lineTo(X(a[0]) - 8 * d, Y(a[1]) + 6 * d); c.lineTo(X(a[0]) + 8 * d, Y(a[1]) + 6 * d); c.fill();
+    c.fillStyle = '#e6ebf5'; c.font = (11 * d) + 'px system-ui'; c.fillText('A' + (i + 1), X(a[0]) + 9 * d, Y(a[1]) - 6 * d);
+  });
+  c.fillStyle = '#2fbf71'; c.beginPath(); c.arc(X(BC.start[0]), Y(BC.start[1]), 5 * d, 0, 2 * Math.PI); c.fill(); c.fillText('start', X(BC.start[0]) + 7 * d, Y(BC.start[1]) + 4 * d);
+  c.fillStyle = '#ffd23f'; c.beginPath(); c.arc(X(BC.goal[0]), Y(BC.goal[1]), 7 * d, 0, 2 * Math.PI); c.fill(); c.fillText('goal', X(BC.goal[0]) + 9 * d, Y(BC.goal[1]) + 4 * d);
+  const dots = (arr, col, r) => { c.fillStyle = col; arr.forEach(p => { c.beginPath(); c.arc(X(p[0]), Y(p[1]), r * d, 0, 2 * Math.PI); c.fill(); }); };
+  const line = (arr, col, w) => { if (arr.length < 2) return; c.strokeStyle = col; c.lineWidth = w * d; c.beginPath(); arr.forEach((p, i) => i ? c.lineTo(X(p[0]), Y(p[1])) : c.moveTo(X(p[0]), Y(p[1]))); c.stroke(); };
+  if (BC.src === 'sim' && BC.drones) {
+    const [R, F] = BC.drones;
+    dots(R.est.slice(-150), 'rgba(255,107,107,.45)', 2); dots(F.est.slice(-150), 'rgba(79,140,255,.6)', 1.6);
+    line(R.path, '#ff6b6b', 2); line(F.path, '#ffffff', 2.4);
+    for (const dr of BC.drones) { c.fillStyle = dr.col; c.beginPath(); c.arc(X(dr.pos[0]), Y(dr.pos[1]), 6 * d, 0, 2 * Math.PI); c.fill(); }
+  } else if (BC.live) {
+    dots(BC.live.raw.slice(-200), 'rgba(255,107,107,.5)', 2); line(BC.live.filt, '#4f8cff', 2.4);
+    const f = BC.live.filt[BC.live.filt.length - 1]; if (f) { c.fillStyle = '#4f8cff'; c.beginPath(); c.arc(X(f[0]), Y(f[1]), 7 * d, 0, 2 * Math.PI); c.fill(); }
+  }
+  // stats
+  const r1 = a => a && a.length ? rms(a) : NaN;
+  if (BC.src === 'sim' && BC.drones) {
+    const [R, F] = BC.drones;
+    $('bErr').innerHTML = `<span class="badc">${(100 * r1(R.errs)).toFixed(0)} cm</span> → <span class="good">${(100 * r1(F.errs)).toFixed(0)} cm</span>`;
+    const st = dr => dr.done !== null ? (dr.arrErr < 0.4 ? `<span class="good">arrived ${dr.done.toFixed(1)} s</span>, off by ${(100 * dr.arrErr).toFixed(0)} cm` : `<span class="badc">stopped ${(100 * dr.arrErr).toFixed(0)} cm from goal</span>`) : 'flying ' + BC.t.toFixed(1) + ' s';
+    $('bR').innerHTML = st(R); $('bF').innerHTML = st(F); $('bN').textContent = R.errs.length;
+  } else if (BC.live) {
+    const jit = a => { const o = []; for (let i = 1; i < a.length; i++) o.push(Math.hypot(a[i][0] - a[i - 1][0], a[i][1] - a[i - 1][1])); return o.length ? o.reduce((x, y) => x + y, 0) / o.length : 0; };
+    $('bErr').innerHTML = `jitter <span class="badc">${(100 * jit(BC.live.raw.slice(-50))).toFixed(0)} cm</span> → <span class="good">${(100 * jit(BC.live.filt.slice(-50))).toFixed(0)} cm</span>`;
+    $('bR').textContent = 'live: no ground truth'; $('bF').textContent = BC.live.filt.length ? BC.live.filt[BC.live.filt.length - 1].map(v => v.toFixed(2)).join(', ') + ' m' : '–';
+    $('bN').textContent = BC.live.n;
+  }
+  $('bRssi').textContent = BC.lastRssi ? BC.lastRssi.map(v => v.toFixed(0)).join(' / ') + ' dBm' : '–';
+  // calibration
+  const cal = BC.cal; const cc = $('bCal');
+  if (BC.src === 'sim' && cal.length > 30) {
+    sizeCanvas(cc); const k = cc.getContext('2d'), w = cc.width, h = cc.height, dd = Math.min(window.devicePixelRatio || 1, 2);
+    k.clearRect(0, 0, w, h); const xm = 6.5, ylo = -95, yhi = -30, PX = v => v / xm * w, PY = v => h - (v - ylo) / (yhi - ylo) * h;
+    k.fillStyle = '#6f7a96'; k.font = (10 * dd) + 'px system-ui';
+    for (let x = 1; x <= 6; x++) k.fillText(x + ' m', PX(x) - 8 * dd, h - 3 * dd);
+    for (const yv of [-90, -70, -50]) k.fillText(yv + ' dBm', 3 * dd, PY(yv));
+    k.fillStyle = 'rgba(255,107,107,.45)'; cal.forEach(([x, y]) => { k.fillRect(PX(x) - 1.5 * dd, PY(y) - 1.5 * dd, 3 * dd, 3 * dd); });
+    let sx = 0, sy = 0, sxx = 0, sxy = 0; cal.forEach(([x, y]) => { const lx = Math.log10(x); sx += lx; sy += y; sxx += lx * lx; sxy += lx * y; });
+    const n = cal.length, slope = (n * sxy - sx * sy) / (n * sxx - sx * sx), icpt = (sy - slope * sx) / n;
+    k.strokeStyle = '#4f8cff'; k.lineWidth = 2 * dd; k.beginPath(); for (let x = 0.2; x <= 6.4; x += 0.1) { const y = icpt + slope * Math.log10(x); x < 0.25 ? k.moveTo(PX(x), PY(y)) : k.lineTo(PX(x), PY(y)); } k.stroke();
+    $('bFit').innerHTML = `Least-squares fit on ${n} samples: <b>P0 = ${icpt.toFixed(1)} dBm, n = ${(-slope / 10).toFixed(2)}</b> (true model: P0 = ${val('bP0')}, n = ${val('bNexp')}). With real ESP32s, log RSSI at 0.5–5 m and fit the same way. Deep fades pull the fit down, which is why the median filter comes first.`;
+  } else if (BC.src !== 'sim') $('bFit').textContent = 'Calibration fit runs in Simulate mode. For real boards, log RSSI at known distances (0.5–5 m) and set P0 and n with the sliders.';
+}
+
+// ---------- NAVIGATE: optical-flow localisation + directions ----------
+const nChip = chips('nPipe');
+const NN = 128, NN2 = NN * NN;
+function fftIP(re, im, n, inv) {
+  for (let i = 1, j = 0; i < n; i++) { let bit = n >> 1; for (; j & bit; bit >>= 1) j ^= bit; j ^= bit; if (i < j) { let t = re[i]; re[i] = re[j]; re[j] = t; t = im[i]; im[i] = im[j]; im[j] = t; } }
+  for (let len = 2; len <= n; len <<= 1) {
+    const ang = (inv ? 2 : -2) * Math.PI / len, wr = Math.cos(ang), wi = Math.sin(ang), h = len >> 1;
+    for (let i = 0; i < n; i += len) { let cr = 1, ci = 0;
+      for (let k = 0; k < h; k++) { const a = i + k, b = a + h, vr = re[b] * cr - im[b] * ci, vi = re[b] * ci + im[b] * cr;
+        re[b] = re[a] - vr; im[b] = im[a] - vi; re[a] += vr; im[a] += vi; const t = cr * wr - ci * wi; ci = cr * wi + ci * wr; cr = t; } }
+  }
+}
+const TR = new Float64Array(NN), TI = new Float64Array(NN);
+function fft2(re, im, inv) {
+  for (let y = 0; y < NN; y++) { const o = y * NN; for (let x = 0; x < NN; x++) { TR[x] = re[o + x]; TI[x] = im[o + x]; } fftIP(TR, TI, NN, inv); for (let x = 0; x < NN; x++) { re[o + x] = TR[x]; im[o + x] = TI[x]; } }
+  for (let x = 0; x < NN; x++) { for (let y = 0; y < NN; y++) { TR[y] = re[y * NN + x]; TI[y] = im[y * NN + x]; } fftIP(TR, TI, NN, inv); for (let y = 0; y < NN; y++) { re[y * NN + x] = TR[y]; im[y * NN + x] = TI[y]; } }
+}
+const HANN2 = new Float64Array(NN2);
+for (let y = 0; y < NN; y++) for (let x = 0; x < NN; x++) HANN2[y * NN + x] = (0.5 - 0.5 * Math.cos(2 * Math.PI * x / (NN - 1))) * (0.5 - 0.5 * Math.cos(2 * Math.PI * y / (NN - 1)));
+function spec(gray, win) {
+  const re = new Float64Array(NN2), im = new Float64Array(NN2); let m = 0;
+  for (let i = 0; i < NN2; i++) m += gray[i]; m /= NN2;
+  for (let i = 0; i < NN2; i++) re[i] = (gray[i] - m) * (win ? HANN2[i] : 1);
+  fft2(re, im, false); return { re, im };
+}
+let lastCorr = null;
+function phaseCorr(A, B, keep) {
+  const re = new Float64Array(NN2), im = new Float64Array(NN2);
+  for (let i = 0; i < NN2; i++) { const xr = B.re[i] * A.re[i] + B.im[i] * A.im[i], xi = B.im[i] * A.re[i] - B.re[i] * A.im[i], mg = Math.hypot(xr, xi) + 1e-9; re[i] = xr / mg; im[i] = xi / mg; }
+  fft2(re, im, true);
+  let bi = 0, bv = -1e9; for (let i = 0; i < NN2; i++) if (re[i] > bv) { bv = re[i]; bi = i; }
+  const px = bi % NN, py = (bi / NN) | 0, at = (x, y) => re[((y + NN) % NN) * NN + ((x + NN) % NN)];
+  const sub = (l, c, r) => { const d = l - 2 * c + r; return d < 0 ? 0.5 * (l - r) / d : 0; };
+  let dx = px + sub(at(px - 1, py), bv, at(px + 1, py)), dy = py + sub(at(px, py - 1), bv, at(px, py + 1));
+  if (dx > NN / 2) dx -= NN; if (dy > NN / 2) dy -= NN;
+  if (keep) lastCorr = re;
+  return { dx, dy, q: bv / NN2 };
+}
+// arena (cm): x right, y up
+const AR = { w: 150, h: 100, start: [20, 20], goal: [130, 80], obs: [60, 25, 90, 75], grid: 5, inflate: 9 };
+function blocked(x, y) { const m = AR.inflate; return (AR.obsList || [AR.obs]).some(([x0, y0, x1, y1]) => x > x0 - m && x < x1 + m && y > y0 - m && y < y1 + m); }
+function segFree(a, b) { const n = Math.ceil(Math.hypot(b[0] - a[0], b[1] - a[1]) / 2); for (let i = 0; i <= n; i++) { const t = i / Math.max(1, n); if (blocked(a[0] + t * (b[0] - a[0]), a[1] + t * (b[1] - a[1]))) return false; } return true; }
+function astar(s, g) {
+  const G = AR.grid, cw = Math.round(AR.w / G), ch = Math.round(AR.h / G), idx = (i, j) => j * cw + i;
+  const cell = p => [Math.max(0, Math.min(cw - 1, Math.round(p[0] / G))), Math.max(0, Math.min(ch - 1, Math.round(p[1] / G)))];
+  const [si, sj] = cell(s), [gi, gj] = cell(g), cost = new Float64Array(cw * ch).fill(Infinity), prev = new Int32Array(cw * ch).fill(-1), open = [[0, si, sj]];
+  cost[idx(si, sj)] = 0;
+  while (open.length) {
+    let bi = 0; for (let k = 1; k < open.length; k++) if (open[k][0] < open[bi][0]) bi = k;
+    const [, i, j] = open.splice(bi, 1)[0]; if (i === gi && j === gj) break;
+    for (let di = -1; di <= 1; di++) for (let dj = -1; dj <= 1; dj++) {
+      if (!di && !dj) continue; const ni = i + di, nj = j + dj; if (ni < 0 || nj < 0 || ni >= cw || nj >= ch || blocked(ni * G, nj * G)) continue;
+      const nc = cost[idx(i, j)] + Math.hypot(di, dj); if (nc < cost[idx(ni, nj)]) { cost[idx(ni, nj)] = nc; prev[idx(ni, nj)] = idx(i, j); open.push([nc + Math.hypot(gi - ni, gj - nj), ni, nj]); }
+    }
+  }
+  if (prev[idx(gi, gj)] < 0 && !(si === gi && sj === gj)) return [s, g];
+  const path = []; let c = idx(gi, gj); while (c >= 0) { path.push([(c % cw) * G, ((c / cw) | 0) * G]); c = prev[c]; }
+  path.reverse(); path[0] = [...s]; path[path.length - 1] = [...g];
+  const out = [path[0]]; let k = 0; while (k < path.length - 1) { let j = path.length - 1; while (j > k + 1 && !segFree(path[k], path[j])) j--; out.push(path[j]); k = j; }
+  return out;
+}
+const wrapA = a => { while (a > Math.PI) a -= 2 * Math.PI; while (a < -Math.PI) a += 2 * Math.PI; return a; };
+// simulated textured floor (value noise), 5.12 px per cm, matching a phone ~30 cm above the floor
+const PPCM = 5.12, TW = 800, TH = 560, TEX = new Float32Array(TW * TH);
+(function makeTex() {
+  let a = 98765; const r = () => { a |= 0; a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; };
+  for (const [cell, amp] of [[40, 0.45], [14, 0.3], [5, 0.2], [2, 0.12]]) {
+    const gw = Math.ceil(TW / cell) + 2, gh = Math.ceil(TH / cell) + 2, g = new Float32Array(gw * gh); for (let i = 0; i < g.length; i++) g[i] = r();
+    for (let y = 0; y < TH; y++) for (let x = 0; x < TW; x++) { const fx = x / cell, fy = y / cell, x0 = fx | 0, y0 = fy | 0, tx = fx - x0, ty = fy - y0, sx = tx * tx * (3 - 2 * tx), sy = ty * ty * (3 - 2 * ty);
+      const v = g[y0 * gw + x0] * (1 - sx) * (1 - sy) + g[y0 * gw + x0 + 1] * sx * (1 - sy) + g[(y0 + 1) * gw + x0] * (1 - sx) * sy + g[(y0 + 1) * gw + x0 + 1] * sx * sy;
+      TEX[y * TW + x] += amp * v; }
+  }
+})();
+function renderFloor(pos, psi, noise) {
+  const g = new Float32Array(NN2), c = (NN - 1) / 2, fx = -Math.sin(psi), fy = Math.cos(psi), rx = Math.cos(psi), ry = Math.sin(psi);
+  for (let j = 0; j < NN; j++) for (let i = 0; i < NN; i++) {
+    const f = (c - j) / PPCM, rr = (i - c) / PPCM, wx = pos[0] + f * fx + rr * rx, wy = pos[1] + f * fy + rr * ry;
+    let tx = wx * PPCM + 15, ty = TH - 15 - wy * PPCM; tx = Math.max(0, Math.min(TW - 2, tx)); ty = Math.max(0, Math.min(TH - 2, ty));
+    const x0 = tx | 0, y0 = ty | 0, ax = tx - x0, ay = ty - y0, k = y0 * TW + x0;
+    g[j * NN + i] = TEX[k] * (1 - ax) * (1 - ay) + TEX[k + 1] * ax * (1 - ay) + TEX[k + TW] * (1 - ax) * ay + TEX[k + TW + 1] * ax * ay + noise * randnM();
+  }
+  return g;
+}
+const NV = { src: 'sim', k: 1 / PPCM, u: [0, 1], flip: 1, voice: true, lastSpoken: '', lastSpeakT: 0 };
+try { const c = JSON.parse(localStorage.getItem('navCal') || 'null'); if (c && c.k > 0) { NV.k = c.k; NV.u = c.u; NV.flip = c.flip || 1; NV.camCal = true; } } catch (e) {}
+function newTrack(pos) { return { pos: [...pos], psi: 0, path: [[...pos]], prevSpec: null, hist: [], vel: [0, 0] }; }
+function navReset(keepCal) {
+  NV.nearN = 0; NV.dirCalls = 0; NV.route = null;
+  NV.pr = newProc(); NV.pf = newProc(); NV.gotEsp = false; NV.espN = 0; NV.hold = { key: null, n: 0, shown: null };
+  NV.raw = newTrack(AR.start); NV.flt = newTrack(AR.start);
+  NV.truth = { pos: [...AR.start], psi: 0, path: [[...AR.start]] };
+  NV.route = astar(AR.start, AR.goal); NV.dist = 0; NV.arrived = false; NV.t = 0; NV.calMode = false; NV.calSum = [0, 0];
+  NV.biasSamples = []; NV.bias = 0; NV.biasDone = !nChip.bias; NV.psiComp0 = null; NV.lastRoute = 0; NV.err = null;
+  NV.started = true; NV.q = 0; NV.ms = 0;
+  if (NV.src === 'esp') { NV.raw.path = []; NV.flt.path = []; }
+}
+// heading: integrate gyro (both tracks), filtered track removes bias and fuses compass
+function headingStep(rateDeg, dt, compassDeg) {
+  if (!NV.started) return;
+  if (!NV.biasDone) { NV.biasSamples.push(rateDeg); if (NV.biasSamples.length * dt >= 1.0) { NV.bias = NV.biasSamples.reduce((a, b) => a + b, 0) / NV.biasSamples.length; NV.biasDone = true; } return; }
+  NV.raw.psi = wrapA(NV.raw.psi + rateDeg * D2R * dt);
+  let p = NV.flt.psi + (rateDeg - (nChip.bias ? NV.bias : 0)) * D2R * dt;
+  if (nChip.comp && compassDeg != null) { if (NV.psiComp0 === null) NV.psiComp0 = compassDeg; const pc = wrapA((compassDeg - NV.psiComp0) * D2R); p = p + 0.02 * wrapA(pc - p); }
+  NV.flt.psi = wrapA(p);
+}
+function flowToBody(d) { const [ux, uy] = NV.u; return [NV.k * (d.dx * ux + d.dy * uy), NV.flip * NV.k * (d.dx * -uy + d.dy * ux)]; }
+function trackStep(tr, gray, filt) {
+  const S = spec(gray, filt && nChip.win);
+  let out = null;
+  if (tr.prevSpec) {
+    const d = phaseCorr(tr.prevSpec, S, filt); out = d;
+    let m = { dx: d.dx, dy: d.dy };
+    if (filt && nChip.gate && (d.q < 0.04 || Math.hypot(d.dx, d.dy) > 30)) m = { dx: 0, dy: 0 };
+    if (filt && nChip.med) { tr.hist.push(m); if (tr.hist.length > 3) tr.hist.shift(); const med = a => [...a].sort((x, y) => x - y)[a.length >> 1]; m = { dx: med(tr.hist.map(v => v.dx)), dy: med(tr.hist.map(v => v.dy)) }; }
+    let [f, r] = flowToBody(m);
+    if (filt && nChip.lpf) { const a = val('nAlpha'); tr.vel = [a * f + (1 - a) * tr.vel[0], a * r + (1 - a) * tr.vel[1]]; [f, r] = tr.vel; }
+    if (NV.calMode && filt) { NV.calSum[0] += m.dx; NV.calSum[1] += m.dy; }
+    else if (NV.biasDone) {
+      tr.pos[0] += f * -Math.sin(tr.psi) + r * Math.cos(tr.psi); tr.pos[1] += f * Math.cos(tr.psi) + r * Math.sin(tr.psi);
+      const lp = tr.path[tr.path.length - 1]; if (Math.hypot(tr.pos[0] - lp[0], tr.pos[1] - lp[1]) > 1) { tr.path.push([...tr.pos]); if (filt) NV.dist += Math.hypot(tr.pos[0] - lp[0], tr.pos[1] - lp[1]); }
+    }
+  }
+  tr.prevSpec = S; return out;
+}
+function directions() {
+  const p = NV.flt.pos, g = AR.goal, dG = Math.hypot(g[0] - p[0], g[1] - p[1]);
+  NV.nearN = dG < (isEsp() ? 50 : 7) ? (NV.nearN || 0) + 1 : 0;
+  if (NV.nearN >= (isEsp() ? 10 : 1)) return { arrived: true, turn: 0, text: 'Arrived ✓', sub: 'within ' + dG.toFixed(0) + ' cm of the goal (estimate)', key: 'arrived' };
+  NV.dirCalls = (NV.dirCalls || 0) + 1;
+  if (NV.dirCalls % 4 === 0 || !NV.route) NV.route = astar(p, g);
+  const R = NV.route; let tgt = R[R.length - 1];
+  const look = isEsp() ? 40 : 12; for (let i = 1; i < R.length; i++) if (Math.hypot(R[i][0] - p[0], R[i][1] - p[1]) > look) { tgt = R[i]; break; }
+  const bearing = Math.atan2(-(tgt[0] - p[0]), tgt[1] - p[1]), turn = wrapA(bearing - NV.flt.psi), deg = turn * R2D;
+  let left = 0; for (let i = 1; i < R.length; i++) left += Math.hypot(R[i][0] - R[i - 1][0], R[i][1] - R[i - 1][1]);
+  if (Math.abs(deg) > 25) return { turn, text: (deg > 0 ? 'Turn left ' : 'Turn right ') + Math.abs(deg).toFixed(0) + '°', sub: left.toFixed(0) + ' cm to goal', key: deg > 0 ? 'left' : 'right' };
+  return { turn, text: 'Go straight', sub: left.toFixed(0) + ' cm to goal', key: 'straight' };
+}
+function speak(key, text) {
+  if (!NV.voice || !window.speechSynthesis) return; const now = performance.now();
+  if (key === NV.lastSpoken && now - NV.lastSpeakT < 6000) return; if (now - NV.lastSpeakT < 1800) return;
+  NV.lastSpoken = key; NV.lastSpeakT = now;
+  try { speechSynthesis.cancel(); speechSynthesis.speak(new SpeechSynthesisUtterance(text.replace('°', ' degrees').replace('✓', ''))); } catch (e) {}
+}
+// sim pilot follows the directions using the filtered estimate (like a person following the app)
+function simStep(dt) {
+  const T = NV.truth; let rate = 0, dirs = null;
+  if (NV.biasDone && !NV.arrived) {
+    dirs = directions();
+    if (dirs.arrived) { NV.arrived = true; NV.arrivedDirs = dirs; NV.err = { raw: Math.hypot(NV.raw.pos[0] - T.pos[0], NV.raw.pos[1] - T.pos[1]), flt: Math.hypot(T.pos[0] - AR.goal[0], T.pos[1] - AR.goal[1]) }; }
+    else { rate = Math.max(-60, Math.min(60, dirs.turn * R2D * 2.5)); T.psi = wrapA(T.psi + rate * D2R * dt); if (Math.abs(dirs.turn * R2D) < 30) { const v = 15 * dt; T.pos[0] += v * -Math.sin(T.psi); T.pos[1] += v * Math.cos(T.psi); T.path.push([...T.pos]); } }
+  }
+  if (NV.arrived && !dirs) dirs = NV.arrivedDirs;
+  const gyro = rate + val('nBias') + 0.6 * randnM(), compass = T.psi * R2D + 4 * randnM();
+  const sub = 5; for (let i = 0; i < sub; i++) headingStep(gyro, dt / sub, compass);
+  const gray = renderFloor(T.pos, T.psi, val('nNoise'));
+  const t0 = performance.now(); const d = trackStep(NV.flt, gray, true); trackStep(NV.raw, gray, false); NV.ms = performance.now() - t0;
+  if (d) NV.q = d.q; NV.lastGray = gray; NV.lastFlow = d; NV.t += dt;
+  return dirs;
+}
+// live camera
+const ncv = document.createElement('canvas'); ncv.width = NN; ncv.height = NN; const ncx = ncv.getContext('2d', { willReadFrequently: true });
+function camGray() {
+  const vw = vid.videoWidth, vh = vid.videoHeight, s = Math.min(vw, vh) * 0.6;
+  ncx.drawImage(vid, (vw - s) / 2, (vh - s) / 2, s, s, 0, 0, NN, NN);
+  const d = ncx.getImageData(0, 0, NN, NN).data, g = new Float32Array(NN2);
+  for (let i = 0; i < NN2; i++) g[i] = (0.299 * d[i * 4] + 0.587 * d[i * 4 + 1] + 0.114 * d[i * 4 + 2]) / 255;
+  return g;
+}
+NV.live = { rate: 0, compass: null, lastT: 0 };
+window.addEventListener('devicemotion', e => { const r = e.rotationRate; if (!r || r.alpha == null) return; const now = performance.now(), dt = NV.live.lastT ? (now - NV.live.lastT) / 1000 : 0; NV.live.lastT = now; if ((NV.src === 'cam' || NV.src === 'esp') && dt > 0 && dt < 0.2) headingStep(r.alpha, dt, NV.live.compass); });
+window.addEventListener('deviceorientationabsolute', e => { if (e.alpha != null) NV.live.compass = e.alpha; });
+function liveStep() {
+  if (!vid.videoWidth) return null;
+  const gray = camGray(), t0 = performance.now(); const d = trackStep(NV.flt, gray, true); trackStep(NV.raw, gray, false); NV.ms = performance.now() - t0;
+  if (d) NV.q = d.q; NV.lastGray = gray; NV.lastFlow = d;
+  return NV.biasDone && !NV.calMode ? directions() : null;
+}
+document.querySelectorAll('[data-nsrc]').forEach(b => b.onclick = async () => {
+  const s = b.dataset.nsrc;
+  if (s === 'esp') {
+    try { startMotion(); const nm = await espConnect(); $('nMsg').textContent = 'Connected to ' + nm + '. Heading comes from this phone\'s gyro and compass.'; }
+    catch (e) { $('nMsg').textContent = 'ESP32: ' + e.message; return; }
+  }
+  if ((s === 'esp' || s === 'espsim') && AR.w < 300) setRoom(5, 4);
+  if ((s === 'sim' || s === 'cam') && AR.w > 300) setRoom(1.5, 1);
+  if (s === 'cam') {
+    try {
+      startMotion();
+      if (!camStream) { camStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment', width: { ideal: 640 }, height: { ideal: 480 } }, audio: false }); vid.srcObject = camStream; await vid.play(); }
+    } catch (e) { $('nMsg').textContent = 'Camera blocked here (' + e.name + '). Open the GitHub Pages link in Chrome on your phone.'; return; }
+  }
+  NV.src = s; document.querySelectorAll('[data-nsrc]').forEach(x => x.classList.toggle('on', x.dataset.nsrc === s));
+  $('nMsg').textContent = '';
+  if (s === 'espsim' || s === 'esp') { $('nHint').textContent = s === 'espsim' ? 'Simulated ESP32 anchors in the room corners (A4 optional). A virtual person carries the phone and follows the directions. Position comes from noisy RSSI: red = raw trilateration, blue = median + Kalman chain, white = truth.' : 'Live: put ESP32 anchors A1, A2, A3 in the room corners shown on the map, carry the phone + drone ESP32, tap Set start and follow the arrow.'; NV.started = false; $('nInstr').textContent = 'Tap Set start'; $('nSub').textContent = 'room ' + (AR.w / 100) + ' × ' + (AR.h / 100) + ' m'; return; }
+  $('nHint').textContent = s === 'sim' ? 'Simulation: a virtual phone flies over a textured floor and follows the app\'s directions. White = true path, blue = filtered estimate, red = raw estimate.'
+    : 'Live: hold the phone flat, screen up, about 30 cm above a textured surface (newspaper, tiles, wood). Top edge = forward. ' + (NV.camCal ? 'Calibration loaded.' : 'Do "Calibrate 50 cm" once first.') + ' Then put the phone on START facing up the map and tap Set start.';
+  NV.started = false; $('nInstr').textContent = 'Tap Set start'; $('nSub').textContent = s === 'sim' ? 'the virtual phone will fly to the goal' : 'hold still for 1 s after tapping';
+});
+$('nStart').onclick = () => {
+  if (NV.src === 'cam' && !NV.camCal) { $('nMsg').textContent = 'Tip: calibrate first so distances are in real cm. Using a rough default for now.'; NV.k = 0.08; }
+  try { speechSynthesis.speak(new SpeechSynthesisUtterance(NV.voice ? 'Starting. Hold still.' : '')); } catch (e) {}
+  navReset(); $('nInstr').textContent = 'Hold still…'; $('nSub').textContent = 'measuring gyro bias (1 s)';
+};
+$('nCal').onclick = () => {
+  if (!NV.started) navReset();
+  if (!NV.calMode) { NV.calMode = true; NV.calSum = [0, 0]; NV.flt.prevSpec = null; $('nCal').textContent = 'Stop (moved 50 cm)'; $('nCal').classList.add('on'); $('nInstr').textContent = 'Move forward 50 cm'; $('nSub').textContent = 'slide the phone straight along a ruler, top edge first, then tap Stop'; return; }
+  NV.calMode = false; $('nCal').textContent = 'Calibrate 50 cm'; $('nCal').classList.remove('on');
+  const L = Math.hypot(NV.calSum[0], NV.calSum[1]);
+  if (L < 20) { $('nMsg').textContent = 'Calibration failed: almost no motion seen (' + L.toFixed(0) + ' px). Use a more textured surface and move slower.'; return; }
+  NV.k = 50 / L; NV.u = [NV.calSum[0] / L, NV.calSum[1] / L]; NV.camCal = true;
+  try { localStorage.setItem('navCal', JSON.stringify({ k: NV.k, u: NV.u, flip: NV.flip })); } catch (e) {}
+  $('nMsg').textContent = 'Calibrated: ' + (10 * NV.k).toFixed(2) + ' mm per pixel. Saved on this phone.'; navReset();
+};
+$('nGoal').onclick = () => {
+  if (!NV.started) return; const g = AR.goal;
+  NV.err = { raw: Math.hypot(NV.raw.pos[0] - g[0], NV.raw.pos[1] - g[1]), flt: Math.hypot(NV.flt.pos[0] - g[0], NV.flt.pos[1] - g[1]) };
+  $('nMsg').textContent = `At the real goal: filtered estimate was ${NV.err.flt.toFixed(0)} cm off, raw ${NV.err.raw.toFixed(0)} cm, after ${NV.dist.toFixed(0)} cm travelled (drift ${(100 * NV.err.flt / Math.max(1, NV.dist)).toFixed(1)}%).`;
+};
+$('nVoice').onclick = () => { NV.voice = !NV.voice; $('nVoice').classList.toggle('on', NV.voice); $('nVoice').textContent = NV.voice ? 'Voice on' : 'Voice off'; };
+$('nFlip').onclick = () => { NV.flip *= -1; $('nFlip').classList.toggle('on', NV.flip < 0); try { localStorage.setItem('navCal', JSON.stringify({ k: NV.k, u: NV.u, flip: NV.flip })); } catch (e) {} };
+function showTab(name) {
+  document.querySelectorAll('nav button').forEach(x => x.classList.toggle('on', x.dataset.tab === name));
+  document.querySelectorAll('section').forEach(sec => sec.classList.toggle('on', sec.id === name)); tab = name; window.scrollTo(0, 0);
+}
+$('nToBeacon').onclick = () => showTab('beacon');
+$('bBack').onclick = () => showTab('nav');
+$('nMap').addEventListener('pointerdown', ev => {
+  const cv = $('nMap'), r = cv.getBoundingClientRect(), g = nGeom(cv);
+  const x = ((ev.clientX - r.left) * g.d - g.ox) / g.s, y = (g.oy - (ev.clientY - r.top) * g.d) / g.s;
+  if (NV.obsMode && x > 0 && x < AR.w && y > 0 && y < AR.h) { obsTap(x, y); return; }
+  if (x > 3 && x < AR.w - 3 && y > 3 && y < AR.h - 3 && !blocked(x, y)) { AR.goal = [x, y]; if (NV.started) { NV.route = astar(NV.flt.pos, AR.goal); NV.arrived = false; NV.err = null; } }
+});
+function nGeom(cv) { const d = Math.min(window.devicePixelRatio || 1, 2), w = cv.width, h = cv.height, pad = 14 * d, s = Math.min((w - 2 * pad) / AR.w, (h - 2 * pad) / AR.h); return { d, s, ox: (w - s * AR.w) / 2, oy: h - (h - s * AR.h) / 2 }; }
+function navDraw(dirs, fresh) {
+  const cv = $('nMap'); sizeCanvas(cv); const c = cv.getContext('2d'), g = nGeom(cv), d = g.d, X = x => g.ox + x * g.s, Y = y => g.oy - y * g.s;
+  c.clearRect(0, 0, cv.width, cv.height);
+  const gs = AR.w > 300 ? 50 : 10; c.strokeStyle = '#1a2236'; c.lineWidth = 1; for (let x = 0; x <= AR.w; x += gs) { c.beginPath(); c.moveTo(X(x), Y(0)); c.lineTo(X(x), Y(AR.h)); c.stroke(); } for (let y = 0; y <= AR.h; y += gs) { c.beginPath(); c.moveTo(X(0), Y(y)); c.lineTo(X(AR.w), Y(y)); c.stroke(); }
+  c.strokeStyle = '#46557a'; c.lineWidth = 2 * d; c.strokeRect(X(0), Y(AR.h), AR.w * g.s, AR.h * g.s);
+  c.font = (10 * d) + 'px system-ui';
+  for (const [o0, o1, o2, o3] of AR.obsList) { c.fillStyle = '#3a4560'; c.fillRect(X(o0), Y(o3), (o2 - o0) * g.s, (o3 - o1) * g.s); }
+  c.fillStyle = '#8a96b3'; c.fillText(gs + ' cm grid' + (NV.obsMode ? ' · tap to add/remove obstacles' : ''), X(AR.w * 0.35), Y(0) - 5 * d);
+  if (isEsp()) BC.anchors.forEach((a, i) => { const ax = X(a[0] * 100), ay = Y(a[1] * 100); c.fillStyle = '#2fbf71'; c.beginPath(); c.moveTo(ax, ay - 9 * d); c.lineTo(ax - 8 * d, ay + 6 * d); c.lineTo(ax + 8 * d, ay + 6 * d); c.fill(); c.fillText('A' + (i + 1), ax + 9 * d, ay + (a[1] > 0 ? 14 : -8) * d); });
+  c.fillStyle = '#2fbf71'; c.beginPath(); c.arc(X(AR.start[0]), Y(AR.start[1]), 6 * d, 0, 2 * Math.PI); c.fill(); c.fillText('START', X(AR.start[0]) + 8 * d, Y(AR.start[1]) + 4 * d);
+  c.fillStyle = '#ffd23f'; c.beginPath(); c.arc(X(AR.goal[0]), Y(AR.goal[1]), 7 * d, 0, 2 * Math.PI); c.fill(); c.fillText('GOAL', X(AR.goal[0]) - 32 * d, Y(AR.goal[1]) - 10 * d);
+  const line = (arr, col, w, dash) => { if (!arr || arr.length < 2) return; c.strokeStyle = col; c.lineWidth = w * d; c.setLineDash(dash ? [6 * d, 5 * d] : []); c.beginPath(); arr.forEach((p, i) => i ? c.lineTo(X(p[0]), Y(p[1])) : c.moveTo(X(p[0]), Y(p[1]))); c.stroke(); c.setLineDash([]); };
+  if (NV.started) {
+    line(NV.route && [NV.flt.pos, ...NV.route.slice(1)], '#ffd23f', 2, true);
+    c.save(); c.beginPath(); c.rect(X(0) - 4 * d, Y(AR.h) - 4 * d, AR.w * g.s + 8 * d, AR.h * g.s + 8 * d); c.clip();
+    if (isEsp()) { c.fillStyle = 'rgba(255,107,107,.45)'; for (const q of NV.raw.path.slice(-90)) { c.beginPath(); c.arc(X(q[0]), Y(q[1]), 2.2 * d, 0, 2 * Math.PI); c.fill(); } }
+    else line(NV.raw.path, 'rgba(255,107,107,.85)', 1.8);
+    if (NV.src === 'sim' || NV.src === 'espsim') line(NV.truth.path, '#ffffff', 2.4);
+    line(NV.flt.path, '#4f8cff', 2.4);
+    const tri = (p, psi, col) => { c.save(); c.translate(X(p[0]), Y(p[1])); c.rotate(-psi); c.fillStyle = col; c.beginPath(); c.moveTo(0, -11 * d); c.lineTo(-7 * d, 7 * d); c.lineTo(7 * d, 7 * d); c.closePath(); c.fill(); c.restore(); };
+    if (!isEsp()) tri(NV.raw.pos, NV.raw.psi, 'rgba(255,107,107,.9)'); if (NV.src === 'sim' || NV.src === 'espsim') tri(NV.truth.pos, NV.truth.psi, '#ffffff'); tri(NV.flt.pos, NV.flt.psi, '#4f8cff');
+    c.restore();
+  }
+  // arrow
+  const ac = $('nArrow'), ax = ac.getContext('2d'); ax.clearRect(0, 0, 220, 220);
+  if (dirs) {
+    ax.save(); ax.translate(110, 110);
+    if (dirs.arrived) { ax.strokeStyle = '#2fbf71'; ax.lineWidth = 16; ax.beginPath(); ax.moveTo(-45, 0); ax.lineTo(-10, 38); ax.lineTo(50, -40); ax.stroke(); }
+    else { ax.rotate(-dirs.turn); ax.fillStyle = Math.abs(dirs.turn * R2D) > 25 ? '#ffb020' : '#4f8cff'; ax.beginPath(); ax.moveTo(0, -85); ax.lineTo(55, -20); ax.lineTo(20, -20); ax.lineTo(20, 75); ax.lineTo(-20, 75); ax.lineTo(-20, -20); ax.lineTo(-55, -20); ax.closePath(); ax.fill(); }
+    ax.restore(); $('nInstr').textContent = dirs.text; $('nSub').textContent = dirs.sub; if (fresh) speak(dirs.key, dirs.text);
+  }
+  // camera patch + correlation surface
+  if (NV.lastGray) {
+    const cc = $('nCam').getContext('2d'), id = cc.createImageData(NN, NN);
+    for (let i = 0; i < NN2; i++) { const v = Math.max(0, Math.min(255, NV.lastGray[i] * 255)); id.data[i * 4] = id.data[i * 4 + 1] = id.data[i * 4 + 2] = v; id.data[i * 4 + 3] = 255; }
+    ncx.putImageData(id, 0, 0); cc.imageSmoothingEnabled = false; cc.drawImage(ncv, 0, 0, 256, 256);
+    if (NV.lastFlow) { cc.strokeStyle = '#2fbf71'; cc.lineWidth = 3; cc.beginPath(); cc.moveTo(128, 128); cc.lineTo(128 + NV.lastFlow.dx * 8, 128 + NV.lastFlow.dy * 8); cc.stroke(); }
+    if (lastCorr) {
+      const kc = $('nCorr').getContext('2d'), kd = kc.createImageData(NN, NN); let mx = 1e-9; for (let i = 0; i < NN2; i++) mx = Math.max(mx, lastCorr[i]);
+      for (let y = 0; y < NN; y++) for (let x = 0; x < NN; x++) { const sx = (x + NN / 2) % NN, sy = (y + NN / 2) % NN, v = Math.max(0, lastCorr[sy * NN + sx] / mx), o = (y * NN + x) * 4; kd.data[o] = 255 * Math.min(1, v * 1.4); kd.data[o + 1] = 255 * Math.min(1, v * v * 1.6); kd.data[o + 2] = 60 + 140 * v; kd.data[o + 3] = 255; }
+      ncx.putImageData(kd, 0, 0); kc.imageSmoothingEnabled = false; kc.drawImage(ncv, 0, 0, 256, 256);
+      kc.strokeStyle = 'rgba(255,255,255,.35)'; kc.beginPath(); kc.moveTo(128, 0); kc.lineTo(128, 256); kc.moveTo(0, 128); kc.lineTo(256, 128); kc.stroke();
+    }
+  }
+  if (NV.started) {
+    $('nPos').textContent = NV.flt.pos.map(v => v.toFixed(0)).join(', ') + ' cm'; $('nHead').textContent = (NV.flt.psi * R2D).toFixed(0) + '°';
+    $('nQ').innerHTML = isEsp() ? (NV.lastRssi ? 'RSSI ' + NV.lastRssi.map(v => v.toFixed(0)).join(' / ') + ' dBm' : (NV.src === 'esp' ? 'waiting for ESP32…' : '–')) : NV.q > 0.08 ? `<span class="good">good (${NV.q.toFixed(2)})</span>` : NV.q > 0.04 ? `ok (${NV.q.toFixed(2)})` : `<span class="badc">low (${NV.q.toFixed(2)})</span>`;
+    if (NV.src === 'sim' || NV.src === 'espsim') { const T = NV.truth.pos; $('nErr').innerHTML = `<span class="badc">${Math.hypot(NV.raw.pos[0] - T[0], NV.raw.pos[1] - T[1]).toFixed(0)} cm</span> → <span class="good">${Math.hypot(NV.flt.pos[0] - T[0], NV.flt.pos[1] - T[1]).toFixed(0)} cm</span>`; }
+    else $('nErr').innerHTML = NV.err ? `<span class="badc">${NV.err.raw.toFixed(0)}</span> → <span class="good">${NV.err.flt.toFixed(0)} cm</span>` : 'tap "I\'m at the goal"';
+    $('nDist').textContent = NV.dist.toFixed(0) + ' cm'; $('nMs').textContent = NV.ms.toFixed(1) + ' ms/frame';
+  }
+}
+$('nTrials').onclick = async () => {
+  if (NV.trialBusy) return; NV.trialBusy = true; const keepSrc = NV.src; const rows = [];
+  for (let k = 0; k < 5; k++) {
+    $('nTrialOut').textContent = 'Running trial ' + (k + 1) + ' of 5…'; await new Promise(r => setTimeout(r, 0));
+    const esp = NV.src === 'espsim' || NV.src === 'esp'; NV.src = esp ? 'espsim' : 'sim'; navReset(); let n = 0; while (!NV.arrived && n < 1800) { esp ? espSimStep(1 / 15) : simStep(1 / 15); n++; if (n % 60 === 0) await new Promise(r => setTimeout(r, 0)); }
+    const T = NV.truth.pos, eR = Math.hypot(NV.raw.pos[0] - T[0], NV.raw.pos[1] - T[1]), eF = Math.hypot(T[0] - AR.goal[0], T[1] - AR.goal[1]);
+    let L = 0; const TP = NV.truth.path; for (let i = 1; i < TP.length; i++) L += Math.hypot(TP[i][0] - TP[i - 1][0], TP[i][1] - TP[i - 1][1]);
+    rows.push([k + 1, NV.arrived ? 'yes' : 'timeout', L, eF, eR, 100 * eF / Math.max(1, L)]);
+  }
+  NV.src = keepSrc; NV.trialBusy = false;
+  const avg = i => rows.reduce((s, r) => s + r[i], 0) / rows.length;
+  const espT = keepSrc === 'esp' || keepSrc === 'espsim';
+  $('nTrialOut').innerHTML = table(espT ? 'E7' : 'E6', espT ? 'E7 ESP32 RSSI navigation (sim, 5 runs)' : 'E6 Optical-flow navigation (sim, 5 runs)', ['Run', 'Arrived', 'Path cm', 'Goal error cm (filtered)', 'Raw estimate error cm', 'Drift %'], [...rows, ['Mean', '', avg(2), avg(3), avg(4), avg(5)]], [0, 0, 0, 1, 1, 2], rows.length) +
+    `<div class="verdict">Following the filtered estimate, the phone ends ${avg(3).toFixed(1)} cm from the goal on average (${avg(5).toFixed(1)}% drift over ${avg(2).toFixed(0)} cm). The raw estimate (${espT ? 'plain trilateration on unfiltered RSSI' : 'no window, no gating, no bias calibration, gyro-only heading'}) is ${avg(4).toFixed(0)} cm off at the same moment.</div>`;
+};
+
+// ---------- Navigate: room size, obstacles, ESP32 position source ----------
+const isEsp = () => NV.src === 'esp' || NV.src === 'espsim';
+AR.obsList = [AR.obs.slice()];
+function setRoom(wm, hm) {
+  AR.w = Math.round(wm * 100); AR.h = Math.round(hm * 100);
+  AR.grid = Math.max(5, Math.round(Math.min(AR.w, AR.h) / 20 / 5) * 5); AR.inflate = Math.round(AR.grid * 1.6);
+  AR.start = [Math.round(AR.w * 0.12), Math.round(AR.h * 0.15)]; AR.goal = [Math.round(AR.w * 0.88), Math.round(AR.h * 0.82)];
+  AR.obsList = [[AR.w * 0.42, AR.h * 0.25, AR.w * 0.58, AR.h * 0.75].map(Math.round)];
+  BC.room = [wm, hm]; BC.anchors = NV.a4 ? [[0, 0], [wm, 0], [0, hm], [wm, hm]] : [[0, 0], [wm, 0], [0, hm]];
+  $('nW').value = wm; $('nH').value = hm; NV.started = false; NV.lastDirs = null;
+  $('nInstr').textContent = 'Tap Set start'; $('nSub').textContent = 'room ' + wm + ' × ' + hm + ' m, grid ' + AR.grid + ' cm';
+}
+NV.a4 = false;
+$('nA4').onclick = () => { NV.a4 = !NV.a4; $('nA4').classList.toggle('on', NV.a4); setRoom(AR.w / 100, AR.h / 100); };
+$('nRoomTable').onclick = () => setRoom(1.5, 1);
+$('nRoomRoom').onclick = () => setRoom(5, 4);
+$('nRoomApply').onclick = () => setRoom(Math.max(1, val('nW')), Math.max(1, val('nH')));
+NV.obsMode = false;
+$('nObsMode').onclick = () => { NV.obsMode = !NV.obsMode; $('nObsMode').classList.toggle('on', NV.obsMode); $('nObsMode').textContent = NV.obsMode ? 'Done editing' : 'Edit obstacles'; };
+$('nObsClear').onclick = () => { AR.obsList = []; if (NV.started) NV.route = astar(NV.flt.pos, AR.goal); };
+function obsTap(x, y) {
+  const i = AR.obsList.findIndex(([x0, y0, x1, y1]) => x > x0 && x < x1 && y > y0 && y < y1);
+  if (i >= 0) AR.obsList.splice(i, 1);
+  else { const h = AR.grid * 1.5; AR.obsList.push([x - h, y - h, x + h, y + h]); }
+  if (NV.started) NV.route = astar(NV.flt.pos, AR.goal);
+}
+// ESP32 positioning: same RSSI chain as the Beacon tab, raw and filtered in parallel
+function espPosition(rssi, dt) {
+  const a = processRSSI(NV.pr, rssi, false, dt), b = processRSSI(NV.pf, rssi, true, dt);
+  NV.lastRssi = rssi; NV.espN = (NV.espN || 0) + 1; const warm = NV.espN > 12;
+  const upd = (tr, p) => { if (!p) return; tr.pos = [p[0] * 100, p[1] * 100]; if (!warm) { tr.path = [[...tr.pos]]; return; } const lp = tr.path[tr.path.length - 1]; if (!lp || Math.hypot(tr.pos[0] - lp[0], tr.pos[1] - lp[1]) > 2) { if (lp && tr === NV.flt) NV.dist += Math.hypot(tr.pos[0] - lp[0], tr.pos[1] - lp[1]); tr.path.push([...tr.pos]); if (tr.path.length > 600) tr.path.shift(); } };
+  upd(NV.raw, a.p); upd(NV.flt, b.p);
+}
+function espSimStep(dt) {
+  const T = NV.truth; let rate = 0, dirs = null;
+  if (NV.biasDone && !NV.arrived) {
+    dirs = directions();
+    if (dirs.arrived) { NV.arrived = true; NV.arrivedDirs = dirs; }
+    else { rate = Math.max(-90, Math.min(90, dirs.turn * R2D * 3)); T.psi = wrapA(T.psi + rate * D2R * dt); if (Math.abs(dirs.turn * R2D) < 30) { const v = 40 * dt; T.pos[0] = Math.max(0, Math.min(AR.w, T.pos[0] + v * -Math.sin(T.psi))); T.pos[1] = Math.max(0, Math.min(AR.h, T.pos[1] + v * Math.cos(T.psi))); T.path.push([...T.pos]); } }
+  }
+  if (NV.arrived && !dirs) dirs = NV.arrivedDirs;
+  const gyro = rate + val('nBias') + 0.6 * randnM(), compass = T.psi * R2D + 4 * randnM();
+  for (let i = 0; i < 5; i++) headingStep(gyro, dt / 5, compass);
+  const t0 = performance.now();
+  espPosition(simRSSI([T.pos[0] / 100, T.pos[1] / 100]).map(v => v.r), dt);
+  NV.ms = performance.now() - t0; NV.t += dt;
+  if (NV.arrived && !NV.err) NV.err = { raw: Math.hypot(NV.raw.pos[0] - T.pos[0], NV.raw.pos[1] - T.pos[1]), flt: Math.hypot(T.pos[0] - AR.goal[0], T.pos[1] - AR.goal[1]) };
+  return dirs;
+}
+NV.espBuf = '';
+async function espConnect() {
+  if (!navigator.bluetooth) throw new Error('Web Bluetooth not available here. Use Chrome on Android via the GitHub Pages link.');
+  const dev = await navigator.bluetooth.requestDevice({ filters: [{ namePrefix: 'DRONE' }], optionalServices: [NUS] });
+  const ch = await (await (await dev.gatt.connect()).getPrimaryService(NUS)).getCharacteristic(NUS_TX);
+  await ch.startNotifications(); let last = performance.now();
+  ch.addEventListener('characteristicvaluechanged', e => {
+    NV.espBuf += new TextDecoder().decode(e.target.value); const parts = NV.espBuf.split('\n'); NV.espBuf = parts.pop();
+    for (const l of parts) { const r = parseLine(l); if (!r || !NV.started) continue; const now = performance.now(); espPosition(r, Math.min(0.5, (now - last) / 1000)); last = now; NV.gotEsp = true; }
+  });
+  dev.addEventListener('gattserverdisconnected', () => { $('nMsg').textContent = 'ESP32 disconnected.'; });
+  return dev.name || 'ESP32';
+}
+
+function holdDirs(d) {
+  if (!d) return d; const H = NV.hold || (NV.hold = { key: null, n: 0, shown: null }), need = isEsp() ? 5 : 2;
+  if (d.key === H.key) H.n++; else { H.key = d.key; H.n = 1; }
+  if (d.arrived || !H.shown || H.n >= need) H.shown = d;
+  return H.shown.key === d.key ? d : { ...d, text: H.shown.text, key: H.shown.key };
+}
+// ---------- main loop ----------
+function updBadge() {
+  if (tab === 'vision') vSrc === 'cam' ? setBadge('LIVE camera', 'live') : vSrc === 'photo' ? setBadge('Your photo', 'live') : setBadge('Synthetic track', 'sim');
+  else if (tab === 'drone') setBadge((drone.src === 'cam' ? 'LIVE camera' : 'synthetic track') + ' · ' + (imu.live ? 'LIVE IMU' : 'sim IMU'), drone.src === 'cam' && imu.live ? 'live' : 'sim');
+  else if (tab === 'results') setBadge('Experiments', '');
+  else if (tab === 'nav') NV.src === 'sim' ? setBadge('Simulated floor', 'sim') : setBadge('LIVE camera + gyro', 'live');
+  else if (tab === 'beacon') BC.src === 'sim' ? setBadge('Simulated ESP32s', 'sim') : setBadge(BC.src === 'csv' ? 'Replaying ESP32 log' : 'LIVE ESP32', 'live');
+  else if (tab === 'imu') imu.live ? setBadge('LIVE phone sensors', 'live') : setBadge('SIMULATED sensors', 'sim');
+  else setBadge('Simulation', 'sim');
+}
+let lastV = 0, lastF = 0, lastD = 0, lastB = 0, lastN = 0, altAcc = 0, lastA = performance.now();
+function loop(now) {
+  updBadge();
+  if (tab === 'vision' && now - lastV > 60) { lastV = now; visionStep(); }
+  const adt = Math.min(0.2, (now - lastA) / 1000); lastA = now; altAcc += adt;
+  while (altAcc > 1 / AFS) { altTick(); altAcc -= 1 / AFS; }
+  if (tab === 'alt') altDraw();
+  if (tab === 'imu') imuDraw();
+  if (tab === 'nav') { let fresh = false; if (NV.started && now - lastN > 66 && !NV.trialBusy) { lastN = now; const dd = NV.src === 'sim' ? simStep(1 / 15) : NV.src === 'espsim' ? espSimStep(1 / 15) : NV.src === 'esp' ? (NV.biasDone && NV.gotEsp ? directions() : null) : liveStep(); NV.lastDirs = NV.biasDone ? holdDirs(dd) : null; fresh = true; } navDraw(NV.started ? NV.lastDirs : null, fresh); }
+  if (tab === 'beacon') { if (BC.src === 'sim' && now - lastB > 50) { lastB = now; bSimStep(); } bDraw(); }
+  if (tab === 'drone' && now - lastD > 66) { lastD = now; droneStep(); }
+  if (tab === 'flight' && now - lastF > 50) { lastF = now; flyStep(); if (fly.fast) flyStep(); flyDraw(); }
+  requestAnimationFrame(loop);
+}
+selectSrc('synth');
+startSim('');
+$('iMsg').textContent = 'Simulated IMU running. Tap "Start phone sensors" to switch to the real accelerometer and gyroscope.';
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>
