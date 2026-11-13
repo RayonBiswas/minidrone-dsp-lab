@@ -355,7 +355,7 @@ table.tbl{width:100%;border-collapse:collapse;font-size:12px;margin-top:6px}
       <div><div id="nInstr" style="font-size:22px;font-weight:700">Tap Set start</div><div class="hint" id="nSub">–</div></div>
     </div>
     <canvas class="plot" id="nMap" style="height:300px;margin-top:10px;touch-action:none"></canvas>
-    <div class="legend"><span><em style="background:#fff"></em>true path (sim)</span><span><em style="background:#4f8cff"></em>filtered estimate</span><span><em style="background:#ff6b6b"></em>raw estimate</span><span><em style="background:#ffd23f"></em>route to goal</span><span><em style="background:#8a96b3"></em>obstacle</span></div>
+    <div class="legend"><span><em style="background:#fff"></em>true path (sim)</span><span><em style="background:#4f8cff"></em>filtered estimate</span><span><em style="background:#ff6b6b"></em>raw estimate (dots in ESP32 mode)</span><span><em style="background:#ffd23f"></em>route to goal</span><span><em style="background:#8a96b3"></em>obstacle</span></div>
   </div>
   <div class="card">
     <div class="grid2">
@@ -1787,7 +1787,7 @@ try { const c = JSON.parse(localStorage.getItem('navCal') || 'null'); if (c && c
 function newTrack(pos) { return { pos: [...pos], psi: 0, path: [[...pos]], prevSpec: null, hist: [], vel: [0, 0] }; }
 function navReset(keepCal) {
   NV.nearN = 0; NV.dirCalls = 0; NV.route = null;
-  NV.pr = newProc(); NV.pf = newProc(); NV.gotEsp = false; NV.hold = { key: null, n: 0, shown: null };
+  NV.pr = newProc(); NV.pf = newProc(); NV.gotEsp = false; NV.espN = 0; NV.hold = { key: null, n: 0, shown: null };
   NV.raw = newTrack(AR.start); NV.flt = newTrack(AR.start);
   NV.truth = { pos: [...AR.start], psi: 0, path: [[...AR.start]] };
   NV.route = astar(AR.start, AR.goal); NV.dist = 0; NV.arrived = false; NV.t = 0; NV.calMode = false; NV.calSum = [0, 0];
@@ -1939,18 +1939,21 @@ function navDraw(dirs, fresh) {
   c.strokeStyle = '#46557a'; c.lineWidth = 2 * d; c.strokeRect(X(0), Y(AR.h), AR.w * g.s, AR.h * g.s);
   c.font = (10 * d) + 'px system-ui';
   for (const [o0, o1, o2, o3] of AR.obsList) { c.fillStyle = '#3a4560'; c.fillRect(X(o0), Y(o3), (o2 - o0) * g.s, (o3 - o1) * g.s); }
-  c.fillStyle = '#8a96b3'; c.fillText(gs + ' cm grid' + (NV.obsMode ? ' · tap to add/remove obstacles' : ''), X(0) + 4 * d, Y(0) - 4 * d);
+  c.fillStyle = '#8a96b3'; c.fillText(gs + ' cm grid' + (NV.obsMode ? ' · tap to add/remove obstacles' : ''), X(AR.w * 0.35), Y(0) - 5 * d);
   if (isEsp()) BC.anchors.forEach((a, i) => { const ax = X(a[0] * 100), ay = Y(a[1] * 100); c.fillStyle = '#2fbf71'; c.beginPath(); c.moveTo(ax, ay - 9 * d); c.lineTo(ax - 8 * d, ay + 6 * d); c.lineTo(ax + 8 * d, ay + 6 * d); c.fill(); c.fillText('A' + (i + 1), ax + 9 * d, ay + (a[1] > 0 ? 14 : -8) * d); });
   c.fillStyle = '#2fbf71'; c.beginPath(); c.arc(X(AR.start[0]), Y(AR.start[1]), 6 * d, 0, 2 * Math.PI); c.fill(); c.fillText('START', X(AR.start[0]) + 8 * d, Y(AR.start[1]) + 4 * d);
   c.fillStyle = '#ffd23f'; c.beginPath(); c.arc(X(AR.goal[0]), Y(AR.goal[1]), 7 * d, 0, 2 * Math.PI); c.fill(); c.fillText('GOAL', X(AR.goal[0]) - 32 * d, Y(AR.goal[1]) - 10 * d);
   const line = (arr, col, w, dash) => { if (!arr || arr.length < 2) return; c.strokeStyle = col; c.lineWidth = w * d; c.setLineDash(dash ? [6 * d, 5 * d] : []); c.beginPath(); arr.forEach((p, i) => i ? c.lineTo(X(p[0]), Y(p[1])) : c.moveTo(X(p[0]), Y(p[1]))); c.stroke(); c.setLineDash([]); };
   if (NV.started) {
     line(NV.route && [NV.flt.pos, ...NV.route.slice(1)], '#ffd23f', 2, true);
-    line(NV.raw.path, 'rgba(255,107,107,.85)', 1.8);
+    c.save(); c.beginPath(); c.rect(X(0) - 4 * d, Y(AR.h) - 4 * d, AR.w * g.s + 8 * d, AR.h * g.s + 8 * d); c.clip();
+    if (isEsp()) { c.fillStyle = 'rgba(255,107,107,.45)'; for (const q of NV.raw.path.slice(-90)) { c.beginPath(); c.arc(X(q[0]), Y(q[1]), 2.2 * d, 0, 2 * Math.PI); c.fill(); } }
+    else line(NV.raw.path, 'rgba(255,107,107,.85)', 1.8);
     if (NV.src === 'sim' || NV.src === 'espsim') line(NV.truth.path, '#ffffff', 2.4);
     line(NV.flt.path, '#4f8cff', 2.4);
     const tri = (p, psi, col) => { c.save(); c.translate(X(p[0]), Y(p[1])); c.rotate(-psi); c.fillStyle = col; c.beginPath(); c.moveTo(0, -11 * d); c.lineTo(-7 * d, 7 * d); c.lineTo(7 * d, 7 * d); c.closePath(); c.fill(); c.restore(); };
-    tri(NV.raw.pos, NV.raw.psi, 'rgba(255,107,107,.9)'); if (NV.src === 'sim' || NV.src === 'espsim') tri(NV.truth.pos, NV.truth.psi, '#ffffff'); tri(NV.flt.pos, NV.flt.psi, '#4f8cff');
+    if (!isEsp()) tri(NV.raw.pos, NV.raw.psi, 'rgba(255,107,107,.9)'); if (NV.src === 'sim' || NV.src === 'espsim') tri(NV.truth.pos, NV.truth.psi, '#ffffff'); tri(NV.flt.pos, NV.flt.psi, '#4f8cff');
+    c.restore();
   }
   // arrow
   const ac = $('nArrow'), ax = ac.getContext('2d'); ax.clearRect(0, 0, 220, 220);
@@ -2026,8 +2029,8 @@ function obsTap(x, y) {
 // ESP32 positioning: same RSSI chain as the Beacon tab, raw and filtered in parallel
 function espPosition(rssi, dt) {
   const a = processRSSI(NV.pr, rssi, false, dt), b = processRSSI(NV.pf, rssi, true, dt);
-  NV.lastRssi = rssi;
-  const upd = (tr, p) => { if (!p) return; tr.pos = [p[0] * 100, p[1] * 100]; const lp = tr.path[tr.path.length - 1]; if (!lp || Math.hypot(tr.pos[0] - lp[0], tr.pos[1] - lp[1]) > 2) { if (lp && tr === NV.flt) NV.dist += Math.hypot(tr.pos[0] - lp[0], tr.pos[1] - lp[1]); tr.path.push([...tr.pos]); if (tr.path.length > 600) tr.path.shift(); } };
+  NV.lastRssi = rssi; NV.espN = (NV.espN || 0) + 1; const warm = NV.espN > 12;
+  const upd = (tr, p) => { if (!p) return; tr.pos = [p[0] * 100, p[1] * 100]; if (!warm) { tr.path = [[...tr.pos]]; return; } const lp = tr.path[tr.path.length - 1]; if (!lp || Math.hypot(tr.pos[0] - lp[0], tr.pos[1] - lp[1]) > 2) { if (lp && tr === NV.flt) NV.dist += Math.hypot(tr.pos[0] - lp[0], tr.pos[1] - lp[1]); tr.path.push([...tr.pos]); if (tr.path.length > 600) tr.path.shift(); } };
   upd(NV.raw, a.p); upd(NV.flt, b.p);
 }
 function espSimStep(dt) {

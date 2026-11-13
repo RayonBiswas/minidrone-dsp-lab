@@ -12,6 +12,16 @@ Drone ESP32 ──BLE (Nordic UART)──▶ phone app (Chrome, GitHub Pages lin
             └─USB serial 115200──▶ laptop app (Chrome/Edge)
 ```
 
+## Which boards can be anchors
+| Board | Anchor? | How |
+|---|---|---|
+| ESP32 | Yes | `anchor/anchor.ino`. Keep at least one ESP32 as the **receiver**: it needs Bluetooth to talk to the phone |
+| ESP8266 (NodeMCU, D1 mini, ESP-01) | Yes | `anchor_esp8266/anchor_esp8266.ino`, same beacon |
+| Spare phone or laptop hotspot, Wi-Fi router | Yes | Rename the hotspot to `DRONE-A2` etc.; set `SCAN_ALL_CHANNELS 1` in the receiver (updates drop to about 1 per second) |
+| Arduino Uno / Nano | No | No radio. It would need an extra Wi-Fi or BLE module, which costs about as much as an ESP8266 |
+
+Mixing board types changes transmit power, so calibrate P0 with the weakest one or use the same type for all anchors.
+
 ## Hardware (required)
 - 4 × ESP32 dev board (ESP32-WROOM / DevKitC), about ₹350–450 each
 - 4 × USB cable, plus USB chargers or power banks for the anchors

@@ -8,6 +8,7 @@
 #include <BLE2902.h>
 
 #define WIFI_CHANNEL 1
+#define SCAN_ALL_CHANNELS 0   // 1 if an anchor is a phone hotspot or router (channel not fixed): slower, ~1 update/s
 #define NUM_ANCHORS 3   // set 4 if you place A4 in the far corner (and tap '4th anchor' in the app)
 #define SVC_UUID "6E400001-B5A3-F393-E0A9-E50E24DCCA9E"
 #define TX_UUID  "6E400003-B5A3-F393-E0A9-E50E24DCCA9E"
@@ -40,7 +41,8 @@ void setup() {
 
 void loop() {
   // scan only the anchors' channel, 80 ms per scan -> several readings per second
-  int n = WiFi.scanNetworks(false, false, false, 80, WIFI_CHANNEL);
+  int n = SCAN_ALL_CHANNELS ? WiFi.scanNetworks(false, false, false, 80)
+                            : WiFi.scanNetworks(false, false, false, 80, WIFI_CHANNEL);
   for (int i = 0; i < n; i++) {
     String id = WiFi.SSID(i);
     if (id.startsWith("DRONE-A")) {
