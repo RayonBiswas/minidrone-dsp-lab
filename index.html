@@ -1203,7 +1203,7 @@ function altTrue(t) { const c = t % 20; if (c < 3) return 1.1 * c / 3; if (c < 1
 function altTick() {
   const dt = 1 / AFS; alt.t += dt;
   const h = altTrue(alt.t);
-  let z = h + val('aSig') / 100 * randn();
+  let z = h + val('aSig') / 100 * randnM();
   const spike = Math.random() < val('aSp') / 100 || (alt.burst > 0 && Math.random() < 0.5);
   if (alt.burst > 0) alt.burst--;
   if (spike) z += (Math.random() < 0.5 ? -1 : 1) * val('aSz') / 100 * (0.6 + 0.4 * Math.random());
