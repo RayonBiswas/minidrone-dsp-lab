@@ -13,15 +13,15 @@ noisy = addNoise(clean, 0.10, 0.06);
 [estRaw, ~] = visionPipe(noisy, 'raw');
 [est, st] = visionPipe(noisy, 'ours');
 
-figure('Name', 'Vision pipeline', 'Color', 'w', 'Position', [50 100 1100 600]);
-subplot(2,3,1); imshow(clean); title('Ideal camera frame');
-subplot(2,3,2); imshow(noisy); title('Noise + lighting + blur');
-subplot(2,3,3); imshow(st.raw); title('HSV threshold (raw)');
-subplot(2,3,4); imshow(st.mask); title('Median 3x3 + close/open');
-subplot(2,3,5); imshow(st.edges); title('Boundary edges');
+lightFig(figure('Name', 'Vision pipeline', 'Color', 'w', 'Position', [50 100 1100 520]));
+subplot(2,3,1); imshow(clean); title('Ideal frame');
+subplot(2,3,2); imshow(noisy); title('Noisy input');
+subplot(2,3,3); imshow(st.raw); title('HSV mask (raw)');
+subplot(2,3,4); imshow(st.mask); title('Median + morph');
+subplot(2,3,5); imshow(st.edges); title('Edges');
 subplot(2,3,6); imshow(noisy); hold on;
 drawLine(est, W, H, 'g'); drawLine(estRaw, W, H, 'y--');
-title(sprintf('Hough: true %.0f%c / %.0fpx, est %.1f%c / %.1fpx', thTrue, 176, dTrue, est(1), 176, est(2)));
+title(sprintf('Hough: %.1f%c / %.1f px (true %.0f%c / %.0f px)', est(1), 176, est(2), thTrue, 176, dTrue));
 legend('filtered', 'raw', 'Location', 'southoutside', 'Orientation', 'horizontal');
 
 %% 2. Vision path - Monte Carlo accuracy, with vs without filters
@@ -52,24 +52,35 @@ fprintf('             accuracy   angle RMSE   offset RMSE   time/frame\n');
 fprintf('raw          %5.1f %%    %5.2f deg    %5.2f px      %5.2f ms\n', vis.accR, vis.angR, vis.offR, vis.msR);
 fprintf('filtered     %5.1f %%    %5.2f deg    %5.2f px      %5.2f ms\n', vis.accF, vis.angF, vis.offF, vis.msF);
 
-spLevels = [0 0.02 0.04 0.06 0.08 0.10 0.12];
-accR = zeros(size(spLevels)); accF = zeros(size(spLevels));
+spLevels = 0:0.1:0.6;
+accR = zeros(size(spLevels)); accF = zeros(size(spLevels)); angR = accR; angF = accF;
 for j = 1:numel(spLevels)
+    eR = zeros(60,1); eF = zeros(60,1);
     for i = 1:60
         th = -35 + 70*rand; d = -30 + 60*rand;
         img = addNoise(makeFrame(th, d, W, H), 0.10, spLevels(j));
-        e = visionPipe(img, 'raw');
+        e = visionPipe(img, 'raw');  if isnan(e(1)), e = [th + 20, d + 20]; end
         if abs(e(1) - th) < 5 && abs(e(2) - d) < 5, accR(j) = accR(j) + 1; end
-        e = visionPipe(img, 'ours');
+        eR(i) = min(abs(e(1) - th), 20);
+        e = visionPipe(img, 'ours'); if isnan(e(1)), e = [th + 20, d + 20]; end
         if abs(e(1) - th) < 5 && abs(e(2) - d) < 5, accF(j) = accF(j) + 1; end
+        eF(i) = min(abs(e(1) - th), 20);
     end
+    angR(j) = sqrt(mean(eR.^2)); angF(j) = sqrt(mean(eF.^2));
 end
-figure('Name', 'Vision accuracy vs noise', 'Color', 'w');
+lightFig(figure('Name', 'Vision accuracy vs noise', 'Color', 'w', 'Position', [60 100 1000 400]));
+subplot(1,2,1);
 plot(100*spLevels, 100*accR/60, 'o-r', 'LineWidth', 1.5); hold on;
 plot(100*spLevels, 100*accF/60, 's-b', 'LineWidth', 1.5); grid on;
 xlabel('Salt-and-pepper density (%)'); ylabel('Detection accuracy (%)');
 legend('Raw threshold', 'Median + morphology', 'Location', 'southwest');
-title('Track detection under increasing noise'); ylim([0 105]);
+title('Track found (within 5 deg / 5 px)'); ylim([0 105]);
+subplot(1,2,2);
+plot(100*spLevels, angR, 'o-r', 'LineWidth', 1.5); hold on;
+plot(100*spLevels, angF, 's-b', 'LineWidth', 1.5); grid on;
+xlabel('Salt-and-pepper density (%)'); ylabel('Angle RMSE (deg)');
+legend('Raw threshold', 'Median + morphology', 'Location', 'northwest');
+title('Line angle error');
 
 %% 2b. Vision ablation - filter vs filter under three noise types
 modes = {'raw', 'median', 'gauss', 'morph', 'gauss+morph', 'ours'};
@@ -96,9 +107,16 @@ for c = 1:3
         fprintf('%-24s %9.0f %10.2f deg %8.1f\n', names{k}, 100*succ(k)/Na, abl(k,c), 1000*tm(k)/Na);
     end
 end
-figure('Name', 'Vision ablation', 'Color', 'w');
+lightFig(figure('Name', 'Vision ablation', 'Color', 'w'));
 bar(abl); grid on; ylabel('Angle RMSE (deg)'); title('Filter vs filter under three noise types');
-set(gca, 'XTickLabel', names, 'XTickLabelRotation', 25); legend(conds(:,1), 'Location', 'northeast');
+yCap = max(3, 1.3*max(abl(abl < 5)));               % outliers (e.g. morphology only on Gaussian noise) are clipped and labelled
+if max(abl(:)) > yCap
+    ylim([0 yCap]); off = [-0.22 0 0.22];
+    for k = 1:size(abl,1), for c = 1:3
+        if abl(k,c) > yCap, text(k + off(c), 0.93*yCap, sprintf('%.1f%c', abl(k,c), 176), 'HorizontalAlignment', 'center', 'FontWeight', 'bold'); end
+    end, end
+end
+set(gca, 'XTickLabel', names, 'XTickLabelRotation', 25); legend(conds(:,1), 'Location', 'northwest');
 
 %% 3. Inertial path - FFT + notch + low-pass, complementary and Kalman fusion
 fs = 200; T = 20; t = (0:1/fs:T-1/fs)'; n = numel(t); g = 9.81;
@@ -160,10 +178,10 @@ fprintf('Roll RMSE: accel raw %.2f | accel filtered %.2f | gyro only %.2f | comp
     imu.accRaw, imu.accF, imu.gyro, imu.comp, imu.kal);
 
 Yf = abs(fft(ayf - mean(ayf))); Yf = Yf(half);
-figure('Name', 'Inertial path', 'Color', 'w', 'Position', [80 80 1100 650]);
-subplot(2,2,1); plot(f, Ya, 'r'); hold on; plot(f, Yf, 'b'); grid on;
+lightFig(figure('Name', 'Inertial path', 'Color', 'w', 'Position', [80 80 1100 650]));
+subplot(2,2,1); plot(f, 20*log10(Ya/n + 1e-6), 'r'); hold on; plot(f, 20*log10(Yf/n + 1e-6), 'b'); grid on;
 xline(f1, '--k'); xline(f2, '--k');
-xlabel('Frequency (Hz)'); ylabel('|Y(f)|'); title('Accelerometer spectrum');
+xlabel('Frequency (Hz)'); ylabel('dB'); title('Accelerometer spectrum');
 legend('raw', 'notch + LPF');
 subplot(2,2,2); plot(t, rad2deg(accRaw), 'Color', [1 0.7 0.7]); hold on;
 plot(t, rad2deg(roll), 'k', 'LineWidth', 1.5); plot(t, rad2deg(accF), 'b');
@@ -202,7 +220,7 @@ fprintf('\nALTITUDE          raw     mov.avg   median   median+Kalman\n');
 fprintf('RMSE (cm)      %6.2f   %6.2f   %6.2f   %6.2f\n', 100*alt.rmse);
 fprintf('SNR (dB)       %6.1f   %6.1f   %6.1f   %6.1f\n', alt.snr);
 
-figure('Name', 'Altitude path', 'Color', 'w', 'Position', [100 100 1000 420]);
+lightFig(figure('Name', 'Altitude path', 'Color', 'w', 'Position', [100 100 1000 420]));
 subplot(1,2,1); plot(t, hm, 'Color', [1 0.6 0.6]); hold on;
 plot(t, h, 'k', 'LineWidth', 1.5); plot(t, hMa, 'm'); plot(t, hKal, 'b', 'LineWidth', 1.2);
 grid on; xlabel('Time (s)'); ylabel('Height (m)'); title('Altitude: take-off, hover, land');
@@ -224,7 +242,7 @@ fprintf('\nCLOSED LOOP (40 s flight)\n');
 fprintf('raw       : RMS tracking error %5.2f cm, steering jerk %.3f, on track %4.1f s\n', rms(resR.err), rms(diff(resR.w)), numel(resR.err)*dtc);
 fprintf('filtered  : RMS tracking error %5.2f cm, steering jerk %.3f, on track %4.1f s\n', rms(resF.err), rms(diff(resF.w)), numel(resF.err)*dtc);
 
-figure('Name', 'Closed-loop result', 'Color', 'w', 'Position', [120 120 1100 420]);
+lightFig(figure('Name', 'Closed-loop result', 'Color', 'w', 'Position', [120 120 1100 420]));
 subplot(1,2,1);
 plot(trk.pts(:,1), trk.pts(:,2), 'k', 'LineWidth', 4); hold on;
 plot(resR.path(:,1), resR.path(:,2), 'r', 'LineWidth', 1.3);
@@ -352,7 +370,7 @@ function res = flyTrack(filt, trk, v, dt, steps, W, H, live)
 x = 0; y = 5; psi = 0; ef = 0; pe = 0; prev = [0 0];
 res.err = []; res.w = []; res.path = [x y];
 if live
-    fig = figure('Name', 'Live pipeline', 'Color', 'w', 'Position', [60 60 1000 650]);
+    fig = lightFig(figure('Name', 'Live pipeline', 'Color', 'w', 'Position', [60 60 1000 650]));
     subplot(2,2,1); hCam = imshow(zeros(H, W, 3)); title('Camera (noisy)');
     subplot(2,2,2); hMask = imshow(false(H, W)); title('Cleaned mask');
     subplot(2,2,3); hEdge = imshow(false(H, W)); hold on;
@@ -495,4 +513,10 @@ end
 function g = gdPoly(c, w)
 k = 0:numel(c)-1; z = exp(-1i*w*k);
 g = real((z*(k.*c).') ./ (z*c.'));
+end
+
+function fig = lightFig(fig)                       % light theme, so titles and labels stay readable when MATLAB is in dark mode
+if exist('theme', 'file') || exist('theme', 'builtin')
+    try, theme(fig, 'light'); catch, end
+end
 end

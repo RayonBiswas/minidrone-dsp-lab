@@ -42,7 +42,8 @@ fprintf('%d samples, fs = %d Hz, %.1f s\n', n, fs, t(end));
 %% 2. FFT - find the motor vibration peaks
 amag = sqrt(ax.^2 + ay.^2 + az.^2);
 f = (0:n-1)'*fs/n; half = 1:floor(n/2);
-Y = abs(fft(amag - mean(amag))) / n; Y = Y(half); f = f(half);
+win = 0.5 - 0.5*cos(2*pi*(0:n-1)'/(n-1));            % Hann window: stops the slow tilt leaking across the spectrum
+Y = abs(fft((amag - mean(amag)) .* win)) / sum(win); Y = Y(half); f = f(half);
 Ys = Y; Ys(f < 5) = 0;
 [~, i1] = max(Ys); f1 = f(i1);
 Ys(abs(f - f1) < 3) = 0;
@@ -103,23 +104,26 @@ if ~isempty(knownAngle)
 end
 
 %% 6. Plots - signals
-Yf = abs(fft(sqrt(axI.^2 + ayI.^2 + azI.^2) - mean(sqrt(axI.^2 + ayI.^2 + azI.^2)))) / n; Yf = Yf(half);
-figure('Name', 'MPU6050 rig', 'Color', 'w', 'Position', [60 60 1100 700]);
+amagI = sqrt(axI.^2 + ayI.^2 + azI.^2);
+Yf = abs(fft((amagI - mean(amagI)) .* win)) / sum(win); Yf = Yf(half);
+lightFig(figure('Name', 'MPU6050 rig', 'Color', 'w', 'Position', [60 60 1100 700]));
 subplot(3,1,1); plot(f, 20*log10(Y + 1e-6), 'r'); hold on; plot(f, 20*log10(Yf + 1e-6), 'b'); grid on;
 xline(f1, '--k'); xline(f2, '--k'); xlabel('Hz'); ylabel('dB');
 title(['Accelerometer spectrum: motor vibration before / after notch + LPF' tag]); legend('raw', 'filtered');
 subplot(3,1,2); plot(t, rollRaw, 'Color', [1 0.6 0.6]); hold on; plot(t, rollFIR, 'm'); plot(t, rollIIR, 'b', 'LineWidth', 1.3);
 grid on; ylabel('deg'); title(['Accelerometer roll' tag]); legend('raw', 'FIR LPF', 'notch + IIR LPF');
+xlim([1 t(end)]);                                     % first second = filter warm-up, also skipped in the metrics
 subplot(3,1,3); plot(t, gyroOnly, 'Color', [1 0.6 0]); hold on; plot(t, comp, 'g', 'LineWidth', 1.5); plot(t, kal, 'k--');
 if ~isempty(knownAngle), yline(knownAngle, ':', 'known angle'); end
-grid on; xlabel('Time (s)'); ylabel('deg'); title(['Fusion' tag]); legend('gyro only', 'complementary', 'Kalman');
+grid on; xlabel('Time (s)'); ylabel('deg'); title(['Fusion' tag]); legend('gyro only', 'complementary', 'Kalman', 'Location', 'northwest');
+xlim([1 t(end)]);
 
 %% 7. Plots - frequency response of every filter
 [Hn1, w] = freqResp(bn1, an1, 4096, fs); Hn2 = freqResp(bn2, an2, 4096, fs);
 Hl = freqResp(bl, al, 4096, fs); Hf = freqResp(bfir, 1, 4096, fs);
 Hc = Hn1 .* Hn2 .* Hl;                                % full IIR chain: notch -> notch -> LPF
 dB = @(H) 20*log10(abs(H) + 1e-12);
-figure('Name', 'Filter frequency response', 'Color', 'w', 'Position', [80 80 1100 700]);
+lightFig(figure('Name', 'Filter frequency response', 'Color', 'w', 'Position', [80 80 1100 700]));
 subplot(2,1,1);
 plot(w, dB(Hn1), 'Color', [0.85 0.4 0]); hold on; plot(w, dB(Hn2), 'Color', [0.95 0.7 0.1]);
 plot(w, dB(Hl), 'b'); plot(w, dB(Hf), 'm'); plot(w, dB(Hc), 'k', 'LineWidth', 1.5);
@@ -135,7 +139,7 @@ grid on; xlabel('Frequency (Hz)'); ylabel('Group delay (ms)');
 title('Delay in the control band (0-10 Hz): IIR chain vs linear-phase FIR'); legend('notch + notch + IIR', 'FIR');
 
 %% 8. Plots - pole-zero maps
-figure('Name', 'Pole-zero', 'Color', 'w', 'Position', [100 100 1100 420]);
+lightFig(figure('Name', 'Pole-zero', 'Color', 'w', 'Position', [100 100 1100 420]));
 subplot(1,3,1); pzPlot(conv(bn1, bn2), conv(an1, an2)); title(sprintf('Notches %.1f / %.1f Hz', f1, f2));
 subplot(1,3,2); pzPlot(bl, al); title(sprintf('Butterworth LPF %g Hz', fc));
 subplot(1,3,3); pzPlot(bfir, 1); title(sprintf('FIR LPF (%d taps)', numel(bfir)));
@@ -147,7 +151,7 @@ nw = 2^nextpow2(round(0.5*fs));                       % ~0.5 s Hann window, 75% 
 amagF = sqrt(axI.^2 + ayI.^2 + azI.^2);
 Sf = stftPower(amagF - mean(amagF), fs, nw, nw/4);
 cl = max(10*log10(Sr(:))) + [-80 0];
-figure('Name', 'Spectrogram', 'Color', 'w', 'Position', [120 120 1100 600]);
+lightFig(figure('Name', 'Spectrogram', 'Color', 'w', 'Position', [120 120 1100 600]));
 subplot(2,1,1); imagesc(tsg, fsg, 10*log10(Sr)); axis xy; clim(cl); colorbar; colormap(turbo);
 ylabel('Hz'); title(['|a| spectrogram, raw: motor lines stay on through the tilt' tag]);
 subplot(2,1,2); imagesc(tsg, fsg, 10*log10(Sf)); axis xy; clim(cl); colorbar;
@@ -234,4 +238,10 @@ for k = 1:numel(starts)
     S(:,k) = abs(X(1:nw/2+1)).^2 / (fs*sum(w.^2));
 end
 f = (0:nw/2)'*fs/nw; tc = (starts - 1 + nw/2)/fs;
+end
+
+function fig = lightFig(fig)                       % light theme, so titles and labels stay readable when MATLAB is in dark mode
+if exist('theme', 'file') || exist('theme', 'builtin')
+    try, theme(fig, 'light'); catch, end
+end
 end
