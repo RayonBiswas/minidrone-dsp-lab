@@ -1,6 +1,7 @@
 %% Noise-Robust Path Tracking for an Autonomous Mini-Drone - DSP pipeline simulation
 % Run section by section (Ctrl+Enter) during the demo, or press Run for everything.
-% Needs: Image Processing Toolbox + Signal Processing Toolbox
+% Runs on plain MATLAB: the toolbox functions (medfilt2, hough, butter, iirnotch, fir1 ...)
+% are written out as local functions at the end, so every DSP step is visible.
 clc; clear; close all;
 rng(1);
 W = 160; H = 120;           % minidrone camera size
@@ -12,15 +13,15 @@ noisy = addNoise(clean, 0.10, 0.06);
 [estRaw, ~] = visionPipe(noisy, 'raw');
 [est, st] = visionPipe(noisy, 'ours');
 
-figure('Name', 'Vision pipeline', 'Color', 'w', 'Position', [50 100 1100 600]);
-subplot(2,3,1); imshow(clean); title('Ideal camera frame');
-subplot(2,3,2); imshow(noisy); title('Noise + lighting + blur');
-subplot(2,3,3); imshow(st.raw); title('HSV threshold (raw)');
-subplot(2,3,4); imshow(st.mask); title('Median 3x3 + close/open');
-subplot(2,3,5); imshow(st.edges); title('Canny edges');
+lightFig(figure('Name', 'Vision pipeline', 'Color', 'w', 'Position', [50 100 1100 520]));
+subplot(2,3,1); imshow(clean); title('Ideal frame');
+subplot(2,3,2); imshow(noisy); title('Noisy input');
+subplot(2,3,3); imshow(st.raw); title('HSV mask (raw)');
+subplot(2,3,4); imshow(st.mask); title('Median + morph');
+subplot(2,3,5); imshow(st.edges); title('Edges');
 subplot(2,3,6); imshow(noisy); hold on;
 drawLine(est, W, H, 'g'); drawLine(estRaw, W, H, 'y--');
-title(sprintf('Hough: true %.0f%c / %.0fpx, est %.1f%c / %.1fpx', thTrue, 176, dTrue, est(1), 176, est(2)));
+title(sprintf('Hough: %.1f%c / %.1f px (true %.0f%c / %.0f px)', est(1), 176, est(2), thTrue, 176, dTrue));
 legend('filtered', 'raw', 'Location', 'southoutside', 'Orientation', 'horizontal');
 
 %% 2. Vision path - Monte Carlo accuracy, with vs without filters
@@ -51,24 +52,35 @@ fprintf('             accuracy   angle RMSE   offset RMSE   time/frame\n');
 fprintf('raw          %5.1f %%    %5.2f deg    %5.2f px      %5.2f ms\n', vis.accR, vis.angR, vis.offR, vis.msR);
 fprintf('filtered     %5.1f %%    %5.2f deg    %5.2f px      %5.2f ms\n', vis.accF, vis.angF, vis.offF, vis.msF);
 
-spLevels = [0 0.02 0.04 0.06 0.08 0.10 0.12];
-accR = zeros(size(spLevels)); accF = zeros(size(spLevels));
+spLevels = 0:0.1:0.6;
+accR = zeros(size(spLevels)); accF = zeros(size(spLevels)); angR = accR; angF = accF;
 for j = 1:numel(spLevels)
+    eR = zeros(60,1); eF = zeros(60,1);
     for i = 1:60
         th = -35 + 70*rand; d = -30 + 60*rand;
         img = addNoise(makeFrame(th, d, W, H), 0.10, spLevels(j));
-        e = visionPipe(img, 'raw');
+        e = visionPipe(img, 'raw');  if isnan(e(1)), e = [th + 20, d + 20]; end
         if abs(e(1) - th) < 5 && abs(e(2) - d) < 5, accR(j) = accR(j) + 1; end
-        e = visionPipe(img, 'ours');
+        eR(i) = min(abs(e(1) - th), 20);
+        e = visionPipe(img, 'ours'); if isnan(e(1)), e = [th + 20, d + 20]; end
         if abs(e(1) - th) < 5 && abs(e(2) - d) < 5, accF(j) = accF(j) + 1; end
+        eF(i) = min(abs(e(1) - th), 20);
     end
+    angR(j) = sqrt(mean(eR.^2)); angF(j) = sqrt(mean(eF.^2));
 end
-figure('Name', 'Vision accuracy vs noise', 'Color', 'w');
+lightFig(figure('Name', 'Vision accuracy vs noise', 'Color', 'w', 'Position', [60 100 1000 400]));
+subplot(1,2,1);
 plot(100*spLevels, 100*accR/60, 'o-r', 'LineWidth', 1.5); hold on;
 plot(100*spLevels, 100*accF/60, 's-b', 'LineWidth', 1.5); grid on;
 xlabel('Salt-and-pepper density (%)'); ylabel('Detection accuracy (%)');
 legend('Raw threshold', 'Median + morphology', 'Location', 'southwest');
-title('Track detection under increasing noise'); ylim([0 105]);
+title('Track found (within 5 deg / 5 px)'); ylim([0 105]);
+subplot(1,2,2);
+plot(100*spLevels, angR, 'o-r', 'LineWidth', 1.5); hold on;
+plot(100*spLevels, angF, 's-b', 'LineWidth', 1.5); grid on;
+xlabel('Salt-and-pepper density (%)'); ylabel('Angle RMSE (deg)');
+legend('Raw threshold', 'Median + morphology', 'Location', 'northwest');
+title('Line angle error');
 
 %% 2b. Vision ablation - filter vs filter under three noise types
 modes = {'raw', 'median', 'gauss', 'morph', 'gauss+morph', 'ours'};
@@ -95,9 +107,16 @@ for c = 1:3
         fprintf('%-24s %9.0f %10.2f deg %8.1f\n', names{k}, 100*succ(k)/Na, abl(k,c), 1000*tm(k)/Na);
     end
 end
-figure('Name', 'Vision ablation', 'Color', 'w');
+lightFig(figure('Name', 'Vision ablation', 'Color', 'w'));
 bar(abl); grid on; ylabel('Angle RMSE (deg)'); title('Filter vs filter under three noise types');
-set(gca, 'XTickLabel', names, 'XTickLabelRotation', 25); legend(conds(:,1), 'Location', 'northeast');
+yCap = max(3, 1.3*max(abl(abl < 5)));               % outliers (e.g. morphology only on Gaussian noise) are clipped and labelled
+if max(abl(:)) > yCap
+    ylim([0 yCap]); off = [-0.22 0 0.22];
+    for k = 1:size(abl,1), for c = 1:3
+        if abl(k,c) > yCap, text(k + off(c), 0.93*yCap, sprintf('%.1f%c', abl(k,c), 176), 'HorizontalAlignment', 'center', 'FontWeight', 'bold'); end
+    end, end
+end
+set(gca, 'XTickLabel', names, 'XTickLabelRotation', 25); legend(conds(:,1), 'Location', 'northwest');
 
 %% 3. Inertial path - FFT + notch + low-pass, complementary and Kalman fusion
 fs = 200; T = 20; t = (0:1/fs:T-1/fs)'; n = numel(t); g = 9.81;
@@ -116,15 +135,15 @@ Ys(abs(f - f1) < 3) = 0;
 [~, i2] = max(Ys); f2 = f(i2);
 fprintf('\nINERTIAL: vibration peaks found by FFT at %.1f Hz and %.1f Hz\n', f1, f2);
 
-[bn1, an1] = iirnotch(f1/(fs/2), (f1/(fs/2))/10);
-[bn2, an2] = iirnotch(f2/(fs/2), (f2/(fs/2))/10);
-[bl, al] = butter(2, 5/(fs/2));
+[bn1, an1] = notchDesign(f1/(fs/2), (f1/(fs/2))/10);
+[bn2, an2] = notchDesign(f2/(fs/2), (f2/(fs/2))/10);
+[bl, al] = butter2(5/(fs/2));
 ayf = filter(bl, al, filter(bn2, an2, filter(bn1, an1, ay)));
 azf = filter(bl, al, filter(bn2, an2, filter(bn1, an1, az)));
 
 accRaw = atan2(ay, az);
 accF = atan2(ayf, azf);
-bfir = fir1(60, 5/(fs/2));
+bfir = firLowpass(60, 5/(fs/2));
 ayFir = filter(bfir, 1, filter(bn2, an2, filter(bn1, an1, ay)));
 azFir = filter(bfir, 1, filter(bn2, an2, filter(bn1, an1, az)));
 accFir = atan2(ayFir, azFir);
@@ -144,24 +163,25 @@ for k = 1:n
     kal(k) = x(1);
 end
 
-imu.accRaw = rad2deg(rms(accRaw - roll));
-imu.accF = rad2deg(rms(accF - roll));
-imu.accFir = rad2deg(rms(accFir - roll));
-imu.gyro = rad2deg(rms(gyroOnly - roll));
-imu.comp = rad2deg(rms(comp - roll));
-imu.kal = rad2deg(rms(kal - roll));
+ok = t > 1;                     % skip 1 s warm-up: filters start from zero state (atan2 swings wildly)
+imu.accRaw = rad2deg(rms(accRaw(ok) - roll(ok)));
+imu.accF = rad2deg(rms(accF(ok) - roll(ok)));
+imu.accFir = rad2deg(rms(accFir(ok) - roll(ok)));
+imu.gyro = rad2deg(rms(gyroOnly(ok) - roll(ok)));
+imu.comp = rad2deg(rms(comp(ok) - roll(ok)));
+imu.kal = rad2deg(rms(kal(ok) - roll(ok)));
 
-gdI = grpdelay(bl, al, [1 2], fs); gdF = grpdelay(bfir, 1, [1 2], fs);
+gdI = groupDelay(bl, al, [1 2], fs); gdF = groupDelay(bfir, 1, [1 2], fs);
 fprintf('Phase delay at 1 Hz: IIR Butterworth %.1f ms, FIR (61 taps) %.1f ms\n', 1000*gdI(1)/fs, 1000*gdF(1)/fs);
 fprintf('Roll RMSE accel: IIR low-pass %.2f deg vs FIR low-pass %.2f deg (FIR lags more)\n', imu.accF, imu.accFir);
 fprintf('Roll RMSE: accel raw %.2f | accel filtered %.2f | gyro only %.2f | complementary %.2f | Kalman %.2f deg\n', ...
     imu.accRaw, imu.accF, imu.gyro, imu.comp, imu.kal);
 
 Yf = abs(fft(ayf - mean(ayf))); Yf = Yf(half);
-figure('Name', 'Inertial path', 'Color', 'w', 'Position', [80 80 1100 650]);
-subplot(2,2,1); plot(f, Ya, 'r'); hold on; plot(f, Yf, 'b'); grid on;
+lightFig(figure('Name', 'Inertial path', 'Color', 'w', 'Position', [80 80 1100 650]));
+subplot(2,2,1); plot(f, 20*log10(Ya/n + 1e-6), 'r'); hold on; plot(f, 20*log10(Yf/n + 1e-6), 'b'); grid on;
 xline(f1, '--k'); xline(f2, '--k');
-xlabel('Frequency (Hz)'); ylabel('|Y(f)|'); title('Accelerometer spectrum');
+xlabel('Frequency (Hz)'); ylabel('dB'); title('Accelerometer spectrum');
 legend('raw', 'notch + LPF');
 subplot(2,2,2); plot(t, rad2deg(accRaw), 'Color', [1 0.7 0.7]); hold on;
 plot(t, rad2deg(roll), 'k', 'LineWidth', 1.5); plot(t, rad2deg(accF), 'b');
@@ -182,7 +202,7 @@ hm = h + 0.03*randn(n,1);
 spk = rand(n,1) < 0.02;
 hm(spk) = hm(spk) + sign(randn(nnz(spk),1)).*(0.3 + 0.3*rand(nnz(spk),1));
 
-hMed = medfilt1(hm, 7);
+hMed = movmedian(hm, 7);                      % 7-point median filter
 hMa = movmean(hm, 15);
 x = [0; 0]; P = eye(2); hKal = zeros(n,1);
 F = [1 dt; 0 1]; Hk = [1 0]; Q = diag([1e-6 1e-4]); R = 0.03^2;
@@ -200,7 +220,7 @@ fprintf('\nALTITUDE          raw     mov.avg   median   median+Kalman\n');
 fprintf('RMSE (cm)      %6.2f   %6.2f   %6.2f   %6.2f\n', 100*alt.rmse);
 fprintf('SNR (dB)       %6.1f   %6.1f   %6.1f   %6.1f\n', alt.snr);
 
-figure('Name', 'Altitude path', 'Color', 'w', 'Position', [100 100 1000 420]);
+lightFig(figure('Name', 'Altitude path', 'Color', 'w', 'Position', [100 100 1000 420]));
 subplot(1,2,1); plot(t, hm, 'Color', [1 0.6 0.6]); hold on;
 plot(t, h, 'k', 'LineWidth', 1.5); plot(t, hMa, 'm'); plot(t, hKal, 'b', 'LineWidth', 1.2);
 grid on; xlabel('Time (s)'); ylabel('Height (m)'); title('Altitude: take-off, hover, land');
@@ -222,7 +242,7 @@ fprintf('\nCLOSED LOOP (40 s flight)\n');
 fprintf('raw       : RMS tracking error %5.2f cm, steering jerk %.3f, on track %4.1f s\n', rms(resR.err), rms(diff(resR.w)), numel(resR.err)*dtc);
 fprintf('filtered  : RMS tracking error %5.2f cm, steering jerk %.3f, on track %4.1f s\n', rms(resF.err), rms(diff(resF.w)), numel(resF.err)*dtc);
 
-figure('Name', 'Closed-loop result', 'Color', 'w', 'Position', [120 120 1100 420]);
+lightFig(figure('Name', 'Closed-loop result', 'Color', 'w', 'Position', [120 120 1100 420]));
 subplot(1,2,1);
 plot(trk.pts(:,1), trk.pts(:,2), 'k', 'LineWidth', 4); hold on;
 plot(resR.path(:,1), resR.path(:,2), 'r', 'LineWidth', 1.3);
@@ -268,10 +288,10 @@ function img = addNoise(img, sig, sp)
 [H, W, ~] = size(img);
 [X, ~] = meshgrid(0:W-1, 0:H-1);
 img = img .* (0.5 + 0.7*X/W);                     % uneven lighting
-img = imfilter(img, ones(1,7)/7, 'replicate');    % motion blur
+img = blurH(img, 7);                              % motion blur
 img = img + sig*randn(size(img));                 % gaussian noise
 img = min(max(img, 0), 1);
-img = imnoise(img, 'salt & pepper', sp);          % per-channel impulses, like a real sensor
+img = saltPepper(img, sp);                        % per-channel impulses, like a real sensor
 end
 
 function [est, st] = visionPipe(img, mode)
@@ -286,22 +306,24 @@ useMorph = any(strcmp(mode, {'morph', 'gauss+morph', 'ours'}));
 if useMed || useGauss
     pre = img;
     for k = 1:3
-        if useMed, pre(:,:,k) = medfilt2(pre(:,:,k), [3 3]); end          % median on the image first
-        if useGauss, pre(:,:,k) = imgaussfilt(pre(:,:,k), 1, 'FilterSize', 5); end
+        if useMed, pre(:,:,k) = median3(pre(:,:,k)); end          % median on the image first
+        if useGauss, pre(:,:,k) = gauss5(pre(:,:,k)); end
     end
     hsv = rgb2hsv(pre);
     bw = (hsv(:,:,1) < 0.06 | hsv(:,:,1) > 0.94) & hsv(:,:,2) > 0.45 & hsv(:,:,3) > 0.15;
 end
 if useMorph
-    bw = imopen(imclose(bw, strel('disk', 2)), strel('disk', 2));
+    se = diskSE(2);
+    bw = erodeB(dilateB(bw, se), se);             % close
+    bw = dilateB(erodeB(bw, se), se);             % open
 end
 st.mask = bw;
-ed = edge(bw, 'canny');
+ed = bw & ~erodeB(bw, [0 1 0; 1 1 1; 0 1 0]);     % boundary pixels of the mask
 st.edges = ed;
 est = [NaN NaN];
 if nnz(ed) < 20, return; end
-[Hh, T, R] = hough(ed);
-P = houghpeaks(Hh, 6, 'Threshold', 0.3*max(Hh(:)));
+[Hh, T, R] = houghLines(ed);
+P = houghPeaks(Hh, 6, 0.3*max(Hh(:)));
 if isempty(P), return; end
 tt = T(P(:,2)); rr = R(P(:,1));
 keep = abs(tt - tt(1)) < 5;
@@ -348,7 +370,7 @@ function res = flyTrack(filt, trk, v, dt, steps, W, H, live)
 x = 0; y = 5; psi = 0; ef = 0; pe = 0; prev = [0 0];
 res.err = []; res.w = []; res.path = [x y];
 if live
-    fig = figure('Name', 'Live pipeline', 'Color', 'w', 'Position', [60 60 1000 650]);
+    fig = lightFig(figure('Name', 'Live pipeline', 'Color', 'w', 'Position', [60 60 1000 650]));
     subplot(2,2,1); hCam = imshow(zeros(H, W, 3)); title('Camera (noisy)');
     subplot(2,2,2); hMask = imshow(false(H, W)); title('Cleaned mask');
     subplot(2,2,3); hEdge = imshow(false(H, W)); hold on;
@@ -388,5 +410,113 @@ for i = 1:steps
         drawnow limitrate;
     end
     if abs(err) > 40, break; end                  % left the track
+end
+end
+
+%% ---------- plain-MATLAB versions of the toolbox functions ----------
+function img = blurH(img, n)                      % horizontal moving average, replicate edges
+h = (n-1)/2; W = size(img, 2);
+idx = min(max((1-h:W+h), 1), W);
+for k = 1:size(img, 3)
+    img(:,:,k) = conv2(img(:,idx,k), ones(1,n)/n, 'valid');
+end
+end
+
+function img = saltPepper(img, d)                 % same rule as imnoise(...,'salt & pepper', d)
+r = rand(size(img));
+img(r < d/2) = 0;
+img(r >= d/2 & r < d) = 1;
+end
+
+function y = median3(x)                           % 3x3 median filter
+[H, W] = size(x);
+xp = x([1 1:H H], [1 1:W W]);
+S = zeros(H, W, 9); k = 0;
+for dy = 0:2
+    for dx = 0:2
+        k = k + 1; S(:,:,k) = xp(1+dy:H+dy, 1+dx:W+dx);
+    end
+end
+y = median(S, 3);
+end
+
+function y = gauss5(x)                            % 5x5 Gaussian, sigma = 1
+g = exp(-(-2:2).^2/2); g = g/sum(g);
+[H, W] = size(x);
+xp = x(min(max(-1:H+2, 1), H), min(max(-1:W+2, 1), W));
+y = conv2(g, g, xp, 'valid');
+end
+
+function se = diskSE(r)                           % same shape as strel('disk', 2)
+[X, Y] = meshgrid(-r:r);
+se = double(X.^2 + Y.^2 <= r^2 + 1);
+end
+
+function bw = dilateB(bw, se)
+bw = conv2(double(bw), se, 'same') > 0.5;
+end
+
+function bw = erodeB(bw, se)                      % pad with 1s like imerode
+r = (size(se,1)-1)/2; [H, W] = size(bw);
+bp = true(H + 2*r, W + 2*r); bp(r+1:r+H, r+1:r+W) = bw;
+bw = conv2(double(bp), se, 'valid') > nnz(se) - 0.5;
+end
+
+function [Hh, T, R] = houghLines(ed)              % rho = x*cos(theta) + y*sin(theta), 1 deg / 1 px bins
+[H, W] = size(ed);
+T = -90:89; D = ceil(hypot(H-1, W-1)); R = -D:D;
+[y, x] = find(ed); x = x - 1; y = y - 1;
+Hh = zeros(numel(R), numel(T));
+for k = 1:numel(T)
+    r = round(x*cosd(T(k)) + y*sind(T(k)));
+    Hh(:,k) = accumarray(r + D + 1, 1, [numel(R) 1]);
+end
+end
+
+function P = houghPeaks(Hh, n, thr)               % strongest cells, suppress a 9x5 neighbourhood
+P = zeros(0, 2);
+for i = 1:n
+    [v, idx] = max(Hh(:));
+    if v < thr || v == 0, break; end
+    [r, c] = ind2sub(size(Hh), idx);
+    P(end+1, :) = [r c];
+    Hh(max(r-4,1):min(r+4,end), max(c-2,1):min(c+2,end)) = 0;
+end
+end
+
+function [b, a] = notchDesign(w0, bw)             % same design as iirnotch (-3 dB bandwidth bw)
+Gb = 10^(-3/20);
+beta = sqrt(1 - Gb^2)/Gb * tan(bw*pi/2);
+g = 1/(1 + beta);
+b = g*[1 -2*cos(w0*pi) 1];
+a = [1 -2*g*cos(w0*pi) 2*g-1];
+end
+
+function [b, a] = butter2(wn)                     % 2nd-order Butterworth low-pass, bilinear transform
+K = tan(pi*wn/2); nrm = 1/(1 + sqrt(2)*K + K^2);
+b = K^2*nrm*[1 2 1];
+a = [1 2*(K^2 - 1)*nrm (1 - sqrt(2)*K + K^2)*nrm];
+end
+
+function h = firLowpass(N, wn)                    % windowed-sinc (Hamming), like fir1(N, wn)
+n = (0:N) - N/2;
+h = sin(pi*wn*n)./(pi*n); h(n == 0) = wn;
+h = h .* (0.54 - 0.46*cos(2*pi*(0:N)/N));
+h = h/sum(h);
+end
+
+function gd = groupDelay(b, a, f, fs)             % group delay in samples, like grpdelay(b,a,f,fs)
+w = 2*pi*f(:)/fs;
+gd = gdPoly(b, w) - gdPoly(a, w);
+end
+
+function g = gdPoly(c, w)
+k = 0:numel(c)-1; z = exp(-1i*w*k);
+g = real((z*(k.*c).') ./ (z*c.'));
+end
+
+function fig = lightFig(fig)                       % light theme, so titles and labels stay readable when MATLAB is in dark mode
+if exist('theme', 'file') || exist('theme', 'builtin')
+    try, theme(fig, 'light'); catch, end
 end
 end

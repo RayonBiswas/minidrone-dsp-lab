@@ -18,12 +18,14 @@
 
 ## Files
 - `index.html`: the entire phone web app in one file (vanilla JS and canvas, no build step).
-- `matlab/minidrone_dsp_sim.m`: full MATLAB simulation. Sections: vision stages, Monte Carlo, ablation (2b), IMU, altitude, closed loop, summary. Needs the Image Processing and Signal Processing Toolboxes. **Never run in MATLAB yet, so expect small fixes.**
+- `matlab/minidrone_dsp_sim.m`: full MATLAB simulation. Sections: vision stages, Monte Carlo, ablation (2b), IMU, altitude, closed loop, summary. Runs on plain MATLAB (toolbox functions written out as local functions); verified end-to-end on R2026b. Roll metrics skip a 1 s filter warm-up.
 - `matlab/phone_sensor_demo.m`: MATLAB Mobile version. It reads the phone accel/gyro (`mobiledev`), runs FFT → notch → LPF → fusion, then takes a camera snapshot and runs the vision path. Also unverified.
 - MATLAB style Rayon prefers: self-contained runnable `.m` scripts with local functions at the end, minimal student-style comments, and explicit per-step blocks rather than clever abstractions.
 
 ## App tabs (index.html)
-- **Camera**: synthetic track, live phone camera, or photo. Pipeline: Median 3×3 (on the image) → optional Gaussian 5×5 → RGB→HSV threshold → close + open (disk r=2) → boundary edges → Hough (top 6 peaks, same-angle group, ρ = midpoint of the two track edges) → steering low-pass → PD steer.
+- **Camera**: synthetic track, live phone camera, or photo. Pipeline: Median 3×3 (on the image) → optional Gaussian 5×5 → RGB→HSV threshold → close + open (disk r=2) → [bottom-½ ROI] → [biggest blob] → boundary edges → Hough (top 6 peaks, same-angle group, ρ = midpoint of the two track edges) → [least-squares refine when blob is on] → steering low-pass → PD steer.
+  - Real-camera fixes: tap the track in panel 1 to pick its colour (mean of the 5 most saturated pixels in a 5×5 patch → hue ±0.04, sat ≥ 0.6·s, val ≥ 0.45·v; 'Picked' button). On camera/photo, morphology becomes a 3×3 close only (any opening erases a 2 px cable) and the ROI chip turns on. On synthetic, the ROI is off by default. The Results tab (E1–E5) does not use these stages, so its seeded numbers are unchanged.
+  - `test_images/real_floor.png` is the regression frame: true 7.1° / 0 px; before the fix −12°, after 7.1° / 0.0 px.
   - Dashed pipeline chips toggle the filters. Sliders inject Gaussian noise, per-channel salt & pepper (like MATLAB `imnoise`), uneven lighting and motion blur.
   - The yellow line is the raw pipeline, green is DSP, white dashed is ground truth (synthetic only).
 - **IMU**: live DeviceMotion (accelerationIncludingGravity + rotationRate) with a simulated fallback.
@@ -37,7 +39,7 @@
 - **Navigate** (main localisation demo): optical flow by FFT phase correlation on 128×128 grayscale patches (Hann window, quality gate q<0.04, median of 3, EMA low-pass), gyro heading (rotationRate.alpha) with 1 s bias calibration at Set start and compass fusion (deviceorientationabsolute, 0.02 gain). The Calibrate 50 cm button learns cm/px and the camera axis, saved in localStorage. Arena 150×100 cm, obstacle, A* on a 5 cm grid with line-of-sight smoothing, re-planned every 300 ms; arrow + speechSynthesis directions; 'I'm at the goal' measures final error. Sim: value-noise floor at 5.12 px/cm with ground truth. E6 drift test: mean 11 cm goal error (7% drift over ~154 cm) filtered vs ~86 cm raw. Unit test: phase correlation recovers known shifts to within 0.03 cm.
 - **Navigate + ESP32** (current localisation plan): sources 'Simulate ESP32' / 'ESP32 via Bluetooth'. Room presets 1.5×1 m / 5×4 m + custom W×H, tap-to-edit obstacles, optional 4th anchor. ESP chain = processRSSI (median 5 → RSSI Kalman → path-loss → linear trilateration → weighted LS, w = 1/(0.05+(0.25d)²) → position Kalman); arrival radius 50 cm held 10 steps; lookahead 40 cm; instruction hold 5 steps; re-plan every 4 direction calls. Sim (5×4 m, 8 runs): goal error median 135 cm (no WLS) → 55 cm (WLS) → 39 cm (WLS + hold); 4 anchors gives the best tracking (~54 cm RMS vs ~2.3 m raw). Firmware: hardware/esp32_beacon (NUM_ANCHORS 3/4).
 - **Beacon page** (no nav button, opened from Navigate): ESP32 filter switches, calibration fit, and the standalone beacon sim. Sim with path-loss + shadowing + multipath fades; raw vs filtered drones fly start → goal; calibration fit (P0, n); live input via Web Bluetooth (Nordic UART, device DRONE-RX) or Web Serial 115200; CSV replay (hardware/esp32_beacon/sample_log.csv). Sim result: position error about 2.2 m raw → about 0.8–1.0 m filtered; the median gives the biggest gain; the position Kalman mainly smooths the path rather than cutting RMS error.
-- **Results**: E1–E5 with a fixed seed (mulberry32 `setSeed`). Live sensor sims use `randnM` (Math.random) so they never disturb the seeded runs. Copy tables (Markdown) and Download CSV.
+- **Results**: E1–E5 with a fixed seed (mulberry32 `setSeed`). Live sensor sims use `randnM` (Math.random) so they never disturb the seeded runs. This includes the altitude sim `altTick()`, which runs every frame on every tab: when it used the seeded `randn()`, E5 changed on every run (fixed). Copy tables (Markdown) and Download CSV.
 
 ## Current results (fixed seed, deterministic)
 - **E1 vision, filter vs filter:**
@@ -51,7 +53,7 @@
   - The notch adds nothing at 18/36 Hz (the LPF already removes it), but at 5 Hz vibration it cuts error from 5.9° to 1.9°.
   - Gyro-only 21° (drift), complementary 1.4°, Kalman 0.7°.
 - **E4 altitude:** raw 20 dB → median + Kalman 34.6 dB SNR. Linear filters smear spikes; the median removes them.
-- **E5 flight:** both drones stay on track. The DSP drone steers 7–9× more smoothly at about 1 cm more tracking error (low-pass lag).
+- **E5 flight:** both drones stay on track. The DSP drone steers 8.0× more smoothly (jerk 0.847 → 0.106) at about 1 cm more tracking error (2.15 vs 3.41 cm RMSE, low-pass lag). Same numbers every run.
 - **Honesty rule:** never tune or fake results to make "ours" win. Hough voting is already robust, so the DSP gain is precision and smoothness. Present trade-offs openly.
 
 ## Commit rules

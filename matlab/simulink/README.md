@@ -29,4 +29,8 @@ For each run, log the drone's x, y position (simulation outputs) and compute tra
 ## IMU vibration in the model (optional)
 In the sensor model, add a **Sine Wave** block (e.g. 40 Hz, 2 m/s²) to the accelerometer signal to mimic propeller vibration. The model's estimator then sees the same problem our notch filter solves. Exact block names differ between support-package versions, so look for the accelerometer signal inside the sensors subsystem.
 
-These files have not been run in Simulink yet. Expect small fixes, such as signal sizes, data types (uint8 vs double) and code-generation limits.
+## Status
+- The three blocks use plain loops and fixed-size arrays only (no Image Processing Toolbox calls), so they should compile in a MATLAB Function block on any licence.
+- `dspVisionBlock` has the same real-camera fixes as the app: a bottom-half ROI, the biggest blob only, and a least-squares refinement of the Hough line. Change `hueC`, `hueW` and `satMin` at the top to match a non-red track.
+- **Tested in plain MATLAB** with `test_simulink_blocks.m` (R2026b): line within 0.4° / 0.2 px, pad centroid exact, and steering low-pass step and hold are correct. Angle RMSE raw → DSP: 0.47° → 0.70° clean (the ROI halves the votes), 0.71° → 0.73° with noise, 1.90° → 0.82° with heavy noise.
+- **Not yet run inside Simulink.** Expect small fixes in the model wiring, such as signal sizes, uint8 vs double ports and sample times.
