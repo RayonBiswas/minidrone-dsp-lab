@@ -18,12 +18,14 @@
 
 ## Files
 - `index.html`: the entire phone web app in one file (vanilla JS and canvas, no build step).
-- `matlab/minidrone_dsp_sim.m`: full MATLAB simulation. Sections: vision stages, Monte Carlo, ablation (2b), IMU, altitude, closed loop, summary. Needs the Image Processing and Signal Processing Toolboxes. **Never run in MATLAB yet, so expect small fixes.**
+- `matlab/minidrone_dsp_sim.m`: full MATLAB simulation. Sections: vision stages, Monte Carlo, ablation (2b), IMU, altitude, closed loop, summary. Runs on plain MATLAB (toolbox functions written out as local functions); verified end-to-end on R2026b. Roll metrics skip a 1 s filter warm-up.
 - `matlab/phone_sensor_demo.m`: MATLAB Mobile version. It reads the phone accel/gyro (`mobiledev`), runs FFT → notch → LPF → fusion, then takes a camera snapshot and runs the vision path. Also unverified.
 - MATLAB style Rayon prefers: self-contained runnable `.m` scripts with local functions at the end, minimal student-style comments, and explicit per-step blocks rather than clever abstractions.
 
 ## App tabs (index.html)
-- **Camera**: synthetic track, live phone camera, or photo. Pipeline: Median 3×3 (on the image) → optional Gaussian 5×5 → RGB→HSV threshold → close + open (disk r=2) → boundary edges → Hough (top 6 peaks, same-angle group, ρ = midpoint of the two track edges) → steering low-pass → PD steer.
+- **Camera**: synthetic track, live phone camera, or photo. Pipeline: Median 3×3 (on the image) → optional Gaussian 5×5 → RGB→HSV threshold → close + open (disk r=2) → [bottom-½ ROI] → [biggest blob] → boundary edges → Hough (top 6 peaks, same-angle group, ρ = midpoint of the two track edges) → [least-squares refine when blob is on] → steering low-pass → PD steer.
+  - Real-camera fixes: tap the track in panel 1 to pick its colour (mean of the 5 most saturated pixels in a 5×5 patch → hue ±0.04, sat ≥ 0.6·s, val ≥ 0.45·v; 'Picked' button). On camera/photo, morphology becomes a 3×3 close only (any opening erases a 2 px cable) and the ROI chip turns on. On synthetic, the ROI is off by default. The Results tab (E1–E5) does not use these stages, so its seeded numbers are unchanged.
+  - `test_images/real_floor.png` is the regression frame: true 7.1° / 0 px; before the fix −12°, after 7.1° / 0.0 px.
   - Dashed pipeline chips toggle the filters. Sliders inject Gaussian noise, per-channel salt & pepper (like MATLAB `imnoise`), uneven lighting and motion blur.
   - The yellow line is the raw pipeline, green is DSP, white dashed is ground truth (synthetic only).
 - **IMU**: live DeviceMotion (accelerationIncludingGravity + rotationRate) with a simulated fallback.

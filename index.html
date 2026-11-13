@@ -86,7 +86,9 @@ table.tbl{width:100%;border-collapse:collapse;font-size:12px;margin-top:6px}
       <span class="chip t on" data-k="median">Median 3×3</span><span class="arr">→</span>
       <span class="chip t" data-k="gauss">Gaussian 5×5</span><span class="arr">→</span>
       <span class="chip">RGB→HSV threshold</span><span class="arr">→</span>
-      <span class="chip t on" data-k="morph">Close + Open</span><span class="arr">→</span>
+      <span class="chip t on" data-k="morph" id="morphChip">Close + Open</span><span class="arr">→</span>
+      <span class="chip t" data-k="roi" id="roiChip">Bottom ½ ROI</span><span class="arr">→</span>
+      <span class="chip t on" data-k="blob">Biggest blob</span><span class="arr">→</span>
       <span class="chip">Edges</span><span class="arr">→</span>
       <span class="chip">Hough</span><span class="arr">→</span>
       <span class="chip t on" data-k="lpf">Low-pass</span><span class="arr">→</span>
@@ -109,7 +111,9 @@ table.tbl{width:100%;border-collapse:collapse;font-size:12px;margin-top:6px}
       <button class="btn" data-col="green">Green</button>
       <button class="btn" data-col="yellow">Yellow</button>
       <button class="btn" data-col="black">Black</button>
+      <button class="btn" data-col="pick" id="pickBtn" hidden>Picked <em id="pickSw" style="display:inline-block;width:12px;height:12px;border-radius:3px;vertical-align:-1px;margin-left:4px"></em></button>
     </div>
+    <p class="hint" id="pickHint" style="font-size:12.5px;color:var(--mut,#9aa4b8);margin:4px 0 8px">Tip: tap the track in panel 1 to lock the threshold onto its exact colour (works on camera and photo).</p>
     <video id="vid" playsinline muted hidden></video>
     <div class="grid2">
       <div class="panel"><canvas id="c1" width="320" height="240"></canvas><span>1 · input + injected noise</span></div>
@@ -499,6 +503,14 @@ document.querySelectorAll('nav button').forEach(b => b.onclick = () => {
 const COLORS = { red: [0.8, 0.15, 0.1], blue: [0.1, 0.25, 0.8], green: [0.1, 0.6, 0.2], yellow: [0.9, 0.8, 0.1], black: [0.07, 0.07, 0.07] };
 const HUE = { red: [0, 0.06], yellow: [0.15, 0.05], green: [0.33, 0.09], blue: [0.62, 0.09] };
 const BG = [0.55, 0.55, 0.5];
+// tap-to-pick colour: HUE.pick is filled in when the user taps the track in panel 1
+const PICK = { rgb: null, vmin: 0.15 };
+function rgb2hsv(r, g, b) {
+  const mx = Math.max(r, g, b), mn = Math.min(r, g, b), dd = mx - mn;
+  let h = 0;
+  if (dd > 0) { if (mx === r) h = ((g - b) / dd) % 6; else if (mx === g) h = (b - r) / dd + 2; else h = (r - g) / dd + 4; h /= 6; if (h < 0) h += 1; }
+  return [h, mx > 0 ? dd / mx : 0, mx];
+}
 
 function paint(onFn, col) {
   const img = new Float32Array(W * H * 3);
@@ -544,7 +556,7 @@ function threshold(img, colName, thr) {
     if (dd > 0) { if (mx === r) h = ((g - b) / dd) % 6; else if (mx === g) h = (b - r) / dd + 2; else h = (r - g) / dd + 4; h /= 6; if (h < 0) h += 1; }
     const [hc, hw] = HUE[colName];
     let dh = Math.abs(h - hc); dh = Math.min(dh, 1 - dh);
-    m[p] = (dh < hw && s > thr && v > 0.15) ? 1 : 0;
+    m[p] = (dh < hw && s > thr && v > (colName === 'pick' ? PICK.vmin : 0.15)) ? 1 : 0;
   }
   return m;
 }
@@ -588,11 +600,12 @@ function median5(m) {
   return o;
 }
 const DISK = []; for (let dy = -2; dy <= 2; dy++) for (let dx = -2; dx <= 2; dx++) if (dx * dx + dy * dy <= 5) DISK.push([dx, dy]);
-function morph(m, erode) {
+const SQ3 = []; for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) SQ3.push([dx, dy]);
+function morph(m, erode, se = DISK) {
   const o = new Uint8Array(W * H);
   for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
     let r = erode ? 1 : 0;
-    for (const [dx, dy] of DISK) {
+    for (const [dx, dy] of se) {
       const xx = x + dx, yy = y + dy;
       if (xx < 0 || yy < 0 || xx >= W || yy >= H) continue;
       const v = m[yy * W + xx];
@@ -605,6 +618,30 @@ function morph(m, erode) {
 }
 const openM = m => morph(morph(m, true), false);
 const closeM = m => morph(morph(m, false), true);
+// thin tracks (a cable is ~2 px wide at 160x120): any opening erases them, so only close
+// with a 3x3 square to bridge gaps; the biggest-blob step removes the speckle instead
+const closeThin = m => morph(morph(m, false, SQ3), true, SQ3);
+function roiBottom(m) {               // keep only the bottom half (the ground just ahead of the drone)
+  const o = new Uint8Array(m); o.fill(0, 0, (H >> 1) * W); return o;
+}
+const BL = new Int32Array(W * H), STK = new Int32Array(W * H);
+function biggestBlob(m) {             // 8-connected labelling, keep the largest component
+  BL.fill(0); let lab = 0, best = 0, bestN = 0;
+  for (let p0 = 0; p0 < W * H; p0++) {
+    if (!m[p0] || BL[p0]) continue;
+    lab++; let sp = 0, n = 0; STK[sp++] = p0; BL[p0] = lab;
+    while (sp) {
+      const p = STK[--sp], x = p % W, y = (p - x) / W; n++;
+      for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+        const xx = x + dx, yy = y + dy; if (xx < 0 || yy < 0 || xx >= W || yy >= H) continue;
+        const q = yy * W + xx; if (m[q] && !BL[q]) { BL[q] = lab; STK[sp++] = q; }
+      }
+    }
+    if (n > bestN) { bestN = n; best = lab; }
+  }
+  const o = new Uint8Array(W * H); if (best) for (let p = 0; p < W * H; p++) o[p] = BL[p] === best ? 1 : 0;
+  return o;
+}
 function edges(m) {
   const e = new Uint8Array(W * H);
   for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
@@ -648,9 +685,30 @@ function pipeline(img, colName, thr, o = {}) {
   if (o.med) pre = medianImg(pre);
   if (o.gauss) pre = gaussImg(pre);
   let m = (o.med || o.gauss) ? threshold(pre, colName, thr) : raw;
-  if (o.morph) m = openM(closeM(m));
+  if (o.morph) m = o.thin ? closeThin(m) : openM(closeM(m));
+  if (o.roi) m = roiBottom(m);
+  if (o.blob) m = biggestBlob(m);
   const e = edges(m);
-  return { raw, mask: m, edge: e, est: hough(e) };
+  let est = hough(e);
+  if (est && o.blob) est = refineLine(m, est);
+  return { raw, mask: m, edge: e, est };
+}
+// least-squares (principal axis) fit on mask pixels within 10 px of the Hough line:
+// Hough finds the line robustly, the fit removes its 1° / 1 px quantisation
+function refineLine(m, est) {
+  const c = Math.cos(est.th * D2R), s = Math.sin(est.th * D2R);
+  let n = 0, sx = 0, sy = 0, sxx = 0, syy = 0, sxy = 0;
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) if (m[y * W + x] && Math.abs(x * c + y * s - est.rho) < 10) {
+    n++; sx += x; sy += y; sxx += x * x; syy += y * y; sxy += x * y;
+  }
+  if (n < 20) return est;
+  const mx = sx / n, my = sy / n, cxx = sxx / n - mx * mx, cyy = syy / n - my * my, cxy = sxy / n - mx * my;
+  let th = 0.5 * Math.atan2(2 * cxy, cxx - cyy) / D2R - 90;      // normal = principal direction - 90°
+  while (th - est.th > 90) th -= 180; while (est.th - th > 90) th += 180;
+  if (Math.abs(th - est.th) > 6) return est;                    // fit disagrees: keep the Hough answer
+  let rho = mx * Math.cos(th * D2R) + my * Math.sin(th * D2R);
+  if (th >= 90) { th -= 180; rho = -rho; } if (th < -90) { th += 180; rho = -rho; }
+  return { th, rho, d: rho - (XC * Math.cos(th * D2R) + YC * Math.sin(th * D2R)) };
 }
 
 // ---------- drawing ----------
@@ -707,12 +765,38 @@ function selectSrc(s) {
   document.querySelectorAll('[data-src]').forEach(x => x.classList.toggle('on', x.dataset.src === s));
   $('synthCtl').style.display = s === 'synth' ? '' : 'none';
   $('accBox').style.display = $('truthLeg').style.display = s === 'synth' ? '' : 'none';
+  $('morphChip').textContent = s === 'synth' ? 'Close + Open' : 'Close 3×3 (thin)';
+  vChip.roi = s !== 'synth'; $('roiChip').classList.toggle('on', vChip.roi);   // ROI rejects clutter on real frames
   setNoiseDefaults(s !== 'synth'); hist.raw = []; hist.dsp = []; hist.okR = []; hist.okF = [];
 }
 document.querySelectorAll('[data-col]').forEach(b => b.onclick = () => {
   vCol = b.dataset.col; document.querySelectorAll('[data-col]').forEach(x => x.classList.toggle('on', x === b));
   $('thrLbl').textContent = vCol === 'black' ? 'Darkness max (V)' : 'Saturation min';
-  $('vThr').value = vCol === 'black' ? 0.3 : (vSrc === 'synth' ? 0.45 : 0.35); $('vThr').dispatchEvent(new Event('input'));
+  $('vThr').value = vCol === 'black' ? 0.3 : vCol === 'pick' ? PICK.thr : (vSrc === 'synth' ? 0.45 : 0.35); $('vThr').dispatchEvent(new Event('input'));
+});
+// tap the track in panel 1 → median colour of a 5x5 patch becomes the threshold target
+let vLastImg = null;
+$('c1').addEventListener('click', ev => {
+  if (!vLastImg) return;
+  const r = $('c1').getBoundingClientRect();
+  const cx = Math.floor((ev.clientX - r.left) / r.width * W), cy = Math.floor((ev.clientY - r.top) / r.height * H);
+  // a thin cable covers only a few pixels of the 5x5 patch, so average the 5 most saturated ones
+  const px = [];
+  for (let dy = -2; dy <= 2; dy++) for (let dx = -2; dx <= 2; dx++) {
+    const x = Math.min(W - 1, Math.max(0, cx + dx)), y = Math.min(H - 1, Math.max(0, cy + dy)), i = (y * W + x) * 3;
+    const c = [vLastImg[i], vLastImg[i + 1], vLastImg[i + 2]]; px.push([rgb2hsv(c[0], c[1], c[2])[1], c]);
+  }
+  px.sort((p, q) => q[0] - p[0]);
+  const rgb = [0, 1, 2].map(k => px.slice(0, 5).reduce((a, p) => a + p[1][k], 0) / 5);
+  const [h, s, v] = rgb2hsv(rgb[0], rgb[1], rgb[2]);
+  if (s < 0.2) { $('vMsg').textContent = 'That spot is almost grey (saturation ' + s.toFixed(2) + '). Tap directly on the coloured track, or use Black.'; return; }
+  HUE.pick = [h, 0.04];                                   // ±0.04 hue (≈ ±14°) around the tapped colour
+  PICK.thr = Math.round(Math.min(0.8, Math.max(0.15, 0.6 * s)) * 100) / 100;
+  PICK.vmin = Math.max(0.08, 0.45 * v);
+  PICK.rgb = rgb;
+  $('pickSw').style.background = `rgb(${rgb.map(c => Math.round(255 * c)).join(',')})`;
+  $('pickBtn').hidden = false; $('pickBtn').click();
+  $('vMsg').textContent = `Picked hue ${(360 * h).toFixed(0)}°, saturation ≥ ${PICK.thr}, value ≥ ${PICK.vmin.toFixed(2)}.`;
 });
 $('autoTrack').onclick = () => { vAuto = !vAuto; $('autoTrack').classList.toggle('on', vAuto); };
 
@@ -744,8 +828,9 @@ function visionStep() {
   const img = addNoise(base, val('vSig'), val('vSp') / 100, val('vLight'), val('vBlur'));
   const thr = val('vThr');
   const t0 = performance.now();
-  const P = pipeline(img, vCol, thr, { med: vChip.median, gauss: vChip.gauss, morph: vChip.morph });
+  const P = pipeline(img, vCol, thr, { med: vChip.median, gauss: vChip.gauss, morph: vChip.morph, thin: vSrc !== 'synth', roi: vChip.roi, blob: vChip.blob });
   const ms = performance.now() - t0;
+  vLastImg = img;
   const R = pipeline(img, vCol, thr, {});
 
   blitRGB($('c1'), img);
@@ -755,6 +840,8 @@ function visionStep() {
   if (truth) drawEst(c4, truth, 'rgba(255,255,255,.35)', true);
   drawEst(c4, R.est, '#ffd23f', true);
   drawEst(c4, P.est, '#2fbf71', false);
+  if (vChip.roi) { const k = c4.canvas.width / W; c4.save(); c4.fillStyle = 'rgba(79,140,255,.10)'; c4.fillRect(0, 0, c4.canvas.width, (H >> 1) * k);
+    c4.strokeStyle = 'rgba(79,140,255,.6)'; c4.setLineDash([4, 4]); c4.beginPath(); c4.moveTo(0, (H >> 1) * k); c4.lineTo(c4.canvas.width, (H >> 1) * k); c4.stroke(); c4.restore(); }
   padStep(img, c4);
 
   const push = (a, v, n) => { a.push(v); if (a.length > n) a.shift(); };
@@ -1261,7 +1348,8 @@ function droneStep() {
   if (drone.src === 'cam' && vid.videoWidth) base = grabImage(vid, vid.videoWidth, vid.videoHeight);
   else { const t = (performance.now() - drone.t0) / 1000; base = synthFrame(20 * Math.sin(0.3 * t), 18 * Math.sin(0.2 * t + 1), COLORS[vCol]); }
   const img = drone.noise ? addNoise(base, val('vSig'), val('vSp') / 100, val('vLight'), val('vBlur')) : base;
-  const P = pipeline(img, vCol, val('vThr'), { med: true, morph: true });
+  const camLive = drone.src === 'cam' && vid.videoWidth;
+  const P = pipeline(img, vCol, val('vThr'), { med: true, morph: true, thin: camLive, roi: camLive, blob: true });
   const c = blitRGB($('dCam'), img); drawEst(c, P.est, '#2fbf71', false);
   blitMask($('dMask'), P.mask, [79, 140, 255]);
   if (P.est) {
