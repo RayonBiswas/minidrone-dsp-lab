@@ -1,0 +1,7 @@
+Maze                           Size        Start          End  Path [px] Time [s]
+maze_generated.png          464x464     (53, 39)   (413, 427)       1069     1.93
+maze_generated_photo.jpg    514x514     (26, 84)   (469, 414)       1100     2.65
+maze_no_path.png            315x317     (31, 21)   (291, 303)        711     0.56
+maze_red_path.png           315x317     (31, 21)   (291, 303)        711     0.43
+
+maze_no_path.png: 100.0 % of the path lies within 6 px of the drawn solution
