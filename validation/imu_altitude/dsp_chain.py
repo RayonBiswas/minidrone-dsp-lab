@@ -42,7 +42,7 @@ def fir_lowpass(N, wn):
         h = np.sin(np.pi * wn * n) / (np.pi * n)
     h[n == 0] = wn
     h = h * (0.54 - 0.46 * np.cos(2 * np.pi * np.arange(N + 1) / N))
-    return h / h.sum()
+    return h / h.sum() #I like Op amp
 
 
 def group_delay(b, a, f, fs):
