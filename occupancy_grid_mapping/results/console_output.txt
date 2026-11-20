@@ -1,0 +1,32 @@
+Occupancy grid mapping + A* - printed output of one run (107 steps)
+
+Only events are printed: a re-plan, the new obstacle appearing, or a collision.
+Steps with no event (including step 1, when there is no earlier route to compare) print nothing.
+
+------------------------------------------------------------------------
+Step   2: something new on the map blocks the old route -> re-planned (#1)
+Step   3: something new on the map blocks the old route -> re-planned (#2)
+Step   6: something new on the map blocks the old route -> re-planned (#3)
+Step   8: something new on the map blocks the old route -> re-planned (#4)
+Step  24: something new on the map blocks the old route -> re-planned (#5)
+Step  30: something new on the map blocks the old route -> re-planned (#6)
+Step  38: something new on the map blocks the old route -> re-planned (#7)
+Step  39: something new on the map blocks the old route -> re-planned (#8)
+Step  41: a new obstacle appeared at x = 5.8-6.4 m, y = 2.6-5.0 m
+Step  41: something new on the map blocks the old route -> re-planned (#9)
+Step  42: something new on the map blocks the old route -> re-planned (#10)
+Step  43: something new on the map blocks the old route -> re-planned (#11)
+Step  45: something new on the map blocks the old route -> re-planned (#12)
+Step  46: something new on the map blocks the old route -> re-planned (#13)
+Step  51: something new on the map blocks the old route -> re-planned (#14)
+Step  52: something new on the map blocks the old route -> re-planned (#15)
+Step  54: something new on the map blocks the old route -> re-planned (#16)
+Step  63: something new on the map blocks the old route -> re-planned (#17)
+
+=== Results ===
+Reached the goal in 107 steps, 16.0 m travelled, 17 re-plans, 0 bumps.
+Mean range error per scan: raw 0.133 m, median-filtered 0.056 m
+
+Map built from            Phantom cells   Missed walls   Accuracy       Seen
+Raw scans                            10             90      98.6%      76.7%
+Median-filtered scans                 5             84      98.8%      76.5%
