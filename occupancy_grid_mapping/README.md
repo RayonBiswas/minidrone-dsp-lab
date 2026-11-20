@@ -1,4 +1,4 @@
-# Occupancy Grid Mapping and A* Route Planning
+# Occupancy Grid Mapping and A* Route Planning.
 
 A MATLAB simulation of the **Explore** mode from the mini-drone project: a drone explores a room it has never seen, builds a map from a noisy range sensor, and plans a safe route to a goal.
 
