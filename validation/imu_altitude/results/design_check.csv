@@ -1,0 +1,7 @@
+design,max_abs_coeff_diff_vs_scipy
+"notch 47 Hz, MATLAB (-3.000 dB)",3.04e-04
+"notch 47 Hz, Gb=1/sqrt2",0.00e+00
+"notch 94 Hz, MATLAB (-3.000 dB)",5.35e-04
+"notch 94 Hz, Gb=1/sqrt2",0.00e+00
+"Butterworth 2nd order, 5 Hz",2.22e-16
+"FIR 61 taps Hamming, 5 Hz",1.39e-17

@@ -1,0 +1,5 @@
+stage,rmse_cm_mean,rmse_cm_std,snr_db_mean,snr_db_std
+Raw,7.175,0.367,22.28,0.45
+Mov avg 15,1.854,0.113,34.03,0.53
+Median 7,1.412,0.032,36.39,0.20
+Median+Kalman,0.762,0.038,41.76,0.44
